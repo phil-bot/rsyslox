@@ -1,3 +1,6 @@
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Go Version](https://img.shields.io/badge/Go-1.21%2B-blue.svg)](https://golang.org)
+
 # rsyslog REST API
 
 High-performance REST API for querying rsyslog data stored in MariaDB/MySQL. Written in Go for maximum performance and minimal resource usage.
