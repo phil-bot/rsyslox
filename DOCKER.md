@@ -1,276 +1,262 @@
 # Docker Test Environment
 
-Simple test environment with rsyslog + MariaDB + test data.
+Simple test environment: **Build on host, runtime in container**.
 
-Binary is built **outside** Docker for simplicity.
-
-## Quick Start
+## Workflow
 
 ```bash
-# 1. Build the API (on host)
+# 1. Build on host
 make build-static
+# Creates: build/rsyslog-rest-api
 
-# 2. Start Docker environment
+# 2. Start Docker
 cd docker
 docker-compose up -d
 
-# 3. Wait for startup (watch logs)
+# 3. Wait (about 20 seconds)
 docker-compose logs -f
-# Wait for "Environment Ready!" then Ctrl+C
+# When you see "Environment Ready!" → Ctrl+C
 
 # 4. Test
 curl http://localhost:8000/health
 curl -H "X-API-Key: test123456789" "http://localhost:8000/logs?limit=5"
-
-# 5. Run test suite
-./test.sh
 ```
 
-That's it! 🎉
+That's it! No buildx, no complicated build process.
 
 ## What happens?
 
-1. ✅ You build the binary on your host with `make build-static`
-2. ✅ Docker mounts `../build/` directory
-3. ✅ Container copies binary to `/opt/rsyslog-rest-api/`
-4. ✅ Container sets up MariaDB + rsyslog + test data
-5. ✅ Container starts the API automatically
+### On the host (your machine):
+```bash
+make build-static
+```
+- Builds the binary with Go
+- Result: `build/rsyslog-rest-api` (8 MB)
 
+### In the container:
+```bash
+docker-compose up -d
+```
+1. ✅ Mounts `../build` to `/host-build` (read-only)
+2. ✅ Copies binary to `/opt/rsyslog-rest-api/`
+3. ✅ Starts MariaDB
+4. ✅ Creates database with 10 test entries
+5. ✅ Configures rsyslog
+6. ✅ Creates `.env` with API_KEY
+7. ✅ Starts the API
 
-## API Testing
+## Prerequisites
 
-### From host
+- Docker (no buildx!)
+- Docker Compose
+- Make
+- Go 1.21+ (for `make build-static`)
+
+## Testing the API
+
 ```bash
 # Health Check
 curl http://localhost:8000/health
 
 # Get logs
-curl -H "X-API-Key: test123456789" \
-  "http://localhost:8000/logs?limit=5"
-
-# Meta data
-curl -H "X-API-Key: test123456789" \
-  "http://localhost:8000/meta/FromHost"
+curl -H "X-API-Key: test123456789" "http://localhost:8000/logs?limit=5"
 
 # Only errors
-curl -H "X-API-Key: test123456789" \
-  "http://localhost:8000/logs?Priority=3"
+curl -H "X-API-Key: test123456789" "http://localhost:8000/logs?Priority=3"
 
-# Run full test suite
-cd docker
+# All hosts
+curl -H "X-API-Key: test123456789" "http://localhost:8000/meta/FromHost"
+
+# Test suite
 ./test.sh
-```
-
-### Inside container
-```bash
-# Open shell
-docker exec -it rsyslog-rest-api-test bash
-
-# Check API process
-ps aux | grep rsyslog-rest-api
-
-# View logs
-tail -f /var/log/rsyslog-rest-api.log
-
-# Check installation
-ls -la /opt/rsyslog-rest-api/
-cat /opt/rsyslog-rest-api/.env
-```
-
-## Rebuild after code changes
-
-```bash
-# 1. Stop container
-cd docker
-docker-compose down
-
-# 2. Rebuild binary
-cd ..
-make build-static
-
-# 3. Restart container
-cd docker
-docker-compose up -d
-
-# Binary is automatically copied on startup
-```
-
-## Konfiguration ändern
-
-### API-Key ändern
-```bash
-# In docker-compose.yml
-environment:
-  - API_KEY=mein-neuer-key
-
-# Neu starten
-docker-compose down
-docker-compose up -d
-```
-
-### Port ändern
-```bash
-# In docker-compose.yml
-ports:
-  - "8080:8000"  # Host:Container
-
-environment:
-  - SERVER_PORT=8000  # Container-intern bleibt 8000
-```
-
-## Datenbank
-
-### Zugriff
-```bash
-# Im Container
-docker exec -it rsyslog-rest-api-test bash
-mysql -u rsyslog -ppassword Syslog
-
-# Testdaten ansehen
-SELECT ReceivedAt, FromHost, Priority, Message FROM SystemEvents LIMIT 5;
-```
-
-### Eigene Daten einfügen
-```bash
-docker exec -it rsyslog-rest-api-test mysql -u rsyslog -ppassword Syslog <<'EOF'
-INSERT INTO SystemEvents (ReceivedAt, FromHost, Priority, Facility, Message, SysLogTag)
-VALUES (NOW(), 'testhost', 6, 1, 'Test message', 'test');
-EOF
-
-# Prüfen
-curl -H "X-API-Key: test123456789" \
-  "http://localhost:8000/logs?FromHost=testhost"
-```
-
-## Was ist wo?
-
-```
-Container Layout:
-├── /opt/rsyslog-rest-api/
-│   ├── rsyslog-rest-api          # Binary
-│   └── .env                      # Konfiguration
-├── /etc/rsyslog.d/mysql.conf     # rsyslog Config
-├── /var/log/rsyslog-rest-api.log # API Logs
-└── /var/lib/mysql/Syslog/        # Datenbank
 ```
 
 ## Troubleshooting
 
-### Container startet nicht
+### Binary not found
+```
+✗ ERROR: Binary not found!
+```
+
+**Solution:**
 ```bash
-# Logs ansehen
+cd .. && make build-static
+cd docker && docker-compose up -d
+```
+
+### API won't start
+```bash
+# View logs
 docker-compose logs
 
-# Neu bauen
+# Inside container
+docker exec -it rsyslog-rest-api-test cat /var/log/rsyslog-rest-api.log
+```
+
+## Restart
+
+```bash
+# After new build
+cd .. && make build-static
+cd docker && docker-compose restart
+
+# Complete rebuild
+cd docker
 docker-compose down
-docker-compose build --no-cache
+docker-compose up -d --build
+```
+
+## What's included?
+
+- Ubuntu 24.04
+- rsyslog with MySQL support
+- MariaDB with test database "Syslog"
+- 10 sample log entries
+- Automatic setup on start
+
+**Container layout:**
+```
+/opt/rsyslog-rest-api/
+├── rsyslog-rest-api          # Binary (copied from host)
+└── .env                      # Auto-generated config
+
+/etc/rsyslog.d/mysql.conf     # rsyslog MySQL output
+/var/log/rsyslog-rest-api.log # API logs
+```
+
+## Database Access
+
+```bash
+# Inside container
+docker exec -it rsyslog-rest-api-test bash
+mysql -u rsyslog -ppassword Syslog
+
+# Check data
+SELECT ReceivedAt, FromHost, Priority, Message 
+FROM SystemEvents 
+ORDER BY ReceivedAt DESC 
+LIMIT 5;
+```
+
+### Add custom test data
+```bash
+docker exec -it rsyslog-rest-api-test mysql -u rsyslog -ppassword Syslog <<'EOF'
+INSERT INTO SystemEvents (ReceivedAt, FromHost, Priority, Facility, Message, SysLogTag)
+VALUES (NOW(), 'testhost', 6, 1, 'Custom test message', 'test');
+EOF
+
+# Verify
+curl -H "X-API-Key: test123456789" \
+  "http://localhost:8000/logs?FromHost=testhost"
+```
+
+## Configuration
+
+### Change API Key
+
+Edit `docker-compose.yml`:
+```yaml
+environment:
+  - API_KEY=your-new-key
+```
+
+Then restart:
+```bash
+docker-compose down
 docker-compose up -d
 ```
 
-### API läuft nicht
-```bash
-# Logs prüfen
-docker exec -it rsyslog-rest-api-test cat /var/log/rsyslog-rest-api.log
+### Change Port
 
-# Manuell starten
-docker exec -it rsyslog-rest-api-test bash
-cd /opt/rsyslog-rest-api
-export $(cat .env | xargs)
-./rsyslog-rest-api
-```
-
-### Datenbank leer
-```bash
-# Anzahl Einträge prüfen
-docker exec -it rsyslog-rest-api-test \
-  mysql -u rsyslog -ppassword Syslog -e "SELECT COUNT(*) FROM SystemEvents"
-
-# Sollte 10 sein
-```
-
-### Port bereits belegt
-```bash
-# Anderen Port nutzen
-# In docker-compose.yml ändern:
+Edit `docker-compose.yml`:
+```yaml
 ports:
-  - "8080:8000"
+  - "8080:8000"  # Host:Container
+```
 
-# Dann testen mit:
+Test with:
+```bash
 curl http://localhost:8080/health
-```
-
-## Neu starten
-
-```bash
-# Soft restart (Daten bleiben)
-docker-compose restart
-
-# Hard restart (neu bauen)
-docker-compose down
-docker-compose up -d --build
-
-# Alles löschen (inkl. Daten!)
-docker-compose down -v
-```
-
-## Test-Script
-
-Automatisierte Tests:
-
-```bash
-# Im docker/ Verzeichnis
-./test.sh
-
-# Oder mit custom API key
-API_KEY=mein-key ./test.sh
-```
-
-## Unterschied zu echtem Server
-
-| Feature | Docker | Echter Server |
-|---------|--------|---------------|
-| API Start | Automatisch | systemd |
-| Datenbank | Auto-Setup | Manuell |
-| Testdaten | Inklusive | Keine |
-
-Der Container simuliert die **komplette Installation** - perfekt zum Testen!
-
-## Performance-Test
-
-```bash
-# Apache Bench (falls installiert)
-ab -n 1000 -c 10 -H "X-API-Key: test123456789" \
-  http://localhost:8000/logs?limit=10
-
-# Oder einfach:
-time curl -H "X-API-Key: test123456789" \
-  "http://localhost:8000/logs?limit=100"
-```
-
-## Logs beobachten
-
-```bash
-# Container-Logs
-docker-compose logs -f
-
-# API-Logs
-docker exec -it rsyslog-rest-api-test \
-  tail -f /var/log/rsyslog-rest-api.log
-
-# MariaDB-Logs
-docker exec -it rsyslog-rest-api-test \
-  tail -f /var/log/mysql/error.log
 ```
 
 ## Stop & Clean
 
 ```bash
-# Stoppen (Daten bleiben)
+# Stop (data persists)
 docker-compose stop
 
-# Stoppen und entfernen (Daten bleiben)
+# Stop and remove (data persists)
 docker-compose down
 
-# ALLES löschen (inkl. Daten!)
+# Delete EVERYTHING (including data!)
 docker-compose down -v
 ```
+
+## Performance Test
+
+```bash
+# Apache Bench (if installed)
+ab -n 1000 -c 10 -H "X-API-Key: test123456789" \
+  http://localhost:8000/logs?limit=10
+
+# Or simple timing
+time curl -H "X-API-Key: test123456789" \
+  "http://localhost:8000/logs?limit=100"
+```
+
+## Logs
+
+```bash
+# Container logs
+docker-compose logs -f
+
+# API logs
+docker exec -it rsyslog-rest-api-test \
+  tail -f /var/log/rsyslog-rest-api.log
+
+# MariaDB logs
+docker exec -it rsyslog-rest-api-test \
+  tail -f /var/log/mysql/error.log
+```
+
+## Advantages
+
+### 1. Simple
+- No complex build steps in container
+- Clear separation: build vs runtime
+- Easy to understand
+
+### 2. Fast
+- Binary already built when container starts
+- No waiting for Go build
+- Faster restart
+
+### 3. Flexible
+```bash
+# Change code
+nano main.go
+
+# Rebuild (on host)
+make build-static
+
+# Restart container (uses new binary)
+cd docker
+docker-compose restart
+```
+
+### 4. No buildx issues
+- Works with standard Docker
+- No plugin required
+- Fewer dependencies
+
+## vs. Real Server
+
+| Feature | Docker | Real Server |
+|---------|--------|-------------|
+| Installation | Automatic | `make install` |
+| Binary | Auto-built on host | Copied from host |
+| API Start | Automatic | systemd |
+| Database | Auto-setup | Manual |
+| Test Data | Included | None |
+
+The container simulates the **complete installation** - perfect for testing!

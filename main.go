@@ -343,7 +343,7 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 	// Otherwise return API info
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"message": "rsyslog RFC-5424 Performance API",
-		"version": "2.0.0-go",
+		"version": "0.2.0",
 		"endpoints": map[string]string{
 			"logs":   "/logs",
 			"meta":   "/meta/{column}",
@@ -464,19 +464,19 @@ func handleLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 // Handler: Get Meta
-func handleMeta(w http.ResponseWriter, r *http.Request) {
-	// Extract column from path
-	path := strings.TrimPrefix(r.URL.Path, "/meta/")
-	column := strings.TrimSpace(path)
-
-	// Special case: /meta ohne Spalte -> Liste aller verfügbaren Spalten
-	if column == "" || column == "meta" {
+	// Special case: /meta without column -> list all available columns
+	if r.URL.Path == "/meta" {
 		respondJSON(w, http.StatusOK, map[string]interface{}{
 			"available_columns": availableColumns,
 			"usage":            "GET /meta/{column} to get distinct values for a column",
 		})
 		return
 	}
+
+
+	// Extract column from path
+	column := strings.TrimPrefix(r.URL.Path, "/meta/")
+	column = strings.TrimSpace(column)
 
 	// Validate column exists in database
 	columnExists := false
