@@ -37,7 +37,7 @@ type Configuration struct {
 var (
 	config          *Configuration
 	db              *sql.DB
-	availableColumns []string // Verfügbare Spalten aus SystemEvents
+	availableColumns []string // Available columns from SystemEvents
 )
 
 // RFC Mappings
@@ -278,7 +278,7 @@ func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			}
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-API-Key")
-			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.Header().Set("Access-Control-Max-Age", "3600")
 		}
 
 		// Handle preflight
@@ -291,34 +291,30 @@ func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// Middleware: API Key Authentication
+// Middleware: Logging
+func loggingMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		next(w, r)
+		log.Printf("%s %s %v", r.Method, r.URL.Path, time.Since(start))
+	}
+}
+
+// Middleware: Authentication
 func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// If no API key is configured, allow access
 		if config.APIKey == "" {
 			next(w, r)
 			return
 		}
 
-		// Check API key
 		apiKey := r.Header.Get("X-API-Key")
 		if apiKey != config.APIKey {
-			log.Printf("Unauthorized access attempt from %s", r.RemoteAddr)
 			respondJSON(w, http.StatusUnauthorized, ErrorResponse{Error: "Invalid or missing API key"})
 			return
 		}
 
 		next(w, r)
-	}
-}
-
-// Middleware: Logging
-func loggingMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		log.Printf("%s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
-		next(w, r)
-		log.Printf("Completed in %v", time.Since(start))
 	}
 }
 
@@ -340,13 +336,13 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Otherwise return API info
+	// Otherwise show API info
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"message": "rsyslog RFC-5424 Performance API",
+		"name":    "rsyslog REST API",
 		"version": "0.2.0",
 		"endpoints": map[string]string{
-			"logs":   "/logs",
-			"meta":   "/meta/{column}",
+			"logs":   "/logs?limit=10&Priority=3",
+			"meta":   "/meta or /meta/{column}",
 			"health": "/health",
 		},
 	})
@@ -357,7 +353,7 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 	// Test database connection
 	dbStatus := "connected"
 	if err := db.Ping(); err != nil {
-		dbStatus = "disconnected"
+		dbStatus := "disconnected"
 		respondJSON(w, http.StatusServiceUnavailable, HealthResponse{
 			Status:    "unhealthy",
 			Database:  dbStatus,
@@ -378,19 +374,24 @@ func handleLogs(w http.ResponseWriter, r *http.Request) {
 	// Parse query parameters
 	query := r.URL.Query()
 	
-	offset, _ := strconv.Atoi(query.Get("offset"))
-	if offset < 0 {
-		offset = 0
+	offsetStr := query.Get("offset")
+	limitStr := query.Get("limit")
+
+	offset := 0
+	if offsetStr != "" {
+		if val, err := strconv.Atoi(offsetStr); err == nil {
+			offset = val
+		}
 	}
 
-	limit, _ := strconv.Atoi(query.Get("limit"))
-	if limit <= 0 {
-		limit = 10
-	}
-	if limit > 1000 {
-		limit = 1000
+	limit := 10
+	if limitStr != "" {
+		if val, err := strconv.Atoi(limitStr); err == nil && val > 0 && val <= 1000 {
+			limit = val
+		}
 	}
 
+	// Parse filters
 	startDate := query.Get("start_date")
 	endDate := query.Get("end_date")
 	fromHost := query.Get("FromHost")
@@ -398,51 +399,53 @@ func handleLogs(w http.ResponseWriter, r *http.Request) {
 	facilityStr := query.Get("Facility")
 	message := query.Get("Message")
 
-	// Build filter
 	where, args, err := buildFilters(startDate, endDate, fromHost, priorityStr, facilityStr, message)
 	if err != nil {
 		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	// Count total
-	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM SystemEvents WHERE %s", where)
+	// Count total matching entries
 	var total int
+	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM SystemEvents WHERE %s", where)
 	if err := db.QueryRow(countQuery, args...).Scan(&total); err != nil {
 		log.Printf("Count query error: %v", err)
 		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Database error"})
 		return
 	}
 
-	// Get logs
-	args = append(args, limit, offset)
-	dataQuery := fmt.Sprintf(
-		"SELECT ID, ReceivedAt, FromHost, Priority, Facility, Message FROM SystemEvents WHERE %s ORDER BY ReceivedAt DESC LIMIT ? OFFSET ?",
-		where,
-	)
+	// Query entries with pagination
+	sqlQuery := fmt.Sprintf(`
+		SELECT ID, ReceivedAt, FromHost, Priority, Facility, Message 
+		FROM SystemEvents 
+		WHERE %s 
+		ORDER BY ReceivedAt DESC 
+		LIMIT ? OFFSET ?
+	`, where)
 
-	rows, err := db.Query(dataQuery, args...)
+	args = append(args, limit, offset)
+	rows, err := db.Query(sqlQuery, args...)
 	if err != nil {
-		log.Printf("Data query error: %v", err)
+		log.Printf("Query error: %v", err)
 		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Database error"})
 		return
 	}
 	defer rows.Close()
 
-	// Parse results
 	var entries []LogEntry
 	for rows.Next() {
 		var entry LogEntry
-		if err := rows.Scan(&entry.ID, &entry.ReceivedAt, &entry.FromHost, &entry.Priority, &entry.Facility, &entry.Message); err != nil {
-			log.Printf("Row scan error: %v", err)
+		if err := rows.Scan(&entry.ID, &entry.ReceivedAt, &entry.FromHost,
+			&entry.Priority, &entry.Facility, &entry.Message); err != nil {
+			log.Printf("Scan error: %v", err)
 			continue
 		}
 
-		// Add RFC labels
 		entry.PriorityLabel = rfcSeverity[entry.Priority]
 		if entry.PriorityLabel == "" {
 			entry.PriorityLabel = fmt.Sprintf("Unknown(%d)", entry.Priority)
 		}
+
 		entry.FacilityLabel = rfcFacility[entry.Facility]
 		if entry.FacilityLabel == "" {
 			entry.FacilityLabel = fmt.Sprintf("Unknown(%d)", entry.Facility)
@@ -464,6 +467,7 @@ func handleLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 // Handler: Get Meta
+func handleMeta(w http.ResponseWriter, r *http.Request) {
 	// Special case: /meta without column -> list all available columns
 	if r.URL.Path == "/meta" {
 		respondJSON(w, http.StatusOK, map[string]interface{}{
@@ -472,7 +476,6 @@ func handleLogs(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-
 
 	// Extract column from path
 	column := strings.TrimPrefix(r.URL.Path, "/meta/")
@@ -494,7 +497,7 @@ func handleLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse filters (alle Filter werden unterstützt)
+	// Parse filters (all filters are supported)
 	query := r.URL.Query()
 	startDate := query.Get("start_date")
 	endDate := query.Get("end_date")
@@ -705,8 +708,8 @@ func main() {
 	http.HandleFunc("/", corsMiddleware(loggingMiddleware(handleRoot)))
 	http.HandleFunc("/health", corsMiddleware(loggingMiddleware(handleHealth)))
 	http.HandleFunc("/logs", corsMiddleware(loggingMiddleware(authMiddleware(handleLogs))))
-	http.HandleFunc("/meta", corsMiddleware(loggingMiddleware(authMiddleware(handleMeta))))   // Liste aller Spalten
-	http.HandleFunc("/meta/", corsMiddleware(loggingMiddleware(authMiddleware(handleMeta)))) // Spezifische Spalte
+	http.HandleFunc("/meta", corsMiddleware(loggingMiddleware(authMiddleware(handleMeta))))   // List all columns
+	http.HandleFunc("/meta/", corsMiddleware(loggingMiddleware(authMiddleware(handleMeta)))) // Specific column
 	http.HandleFunc("/static/", corsMiddleware(loggingMiddleware(handleStatic)))
 
 	// Start server
