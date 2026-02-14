@@ -28,3 +28,6 @@ Thumbs.db
 *.key
 *.crt
 certs/
+
+# Old Files
+*.old.*
