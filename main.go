@@ -65,14 +65,32 @@ var rfcFacility = map[int]string{
 
 // LogEntry represents a single log entry from the database
 type LogEntry struct {
-	ID            int       `json:"ID"`
-	ReceivedAt    time.Time `json:"ReceivedAt"`
-	FromHost      string    `json:"FromHost"`
-	Priority      int       `json:"Priority"`
-	PriorityLabel string    `json:"Priority_Label"`
-	Facility      int       `json:"Facility"`
-	FacilityLabel string    `json:"Facility_Label"`
-	Message       string    `json:"Message"`
+	ID                 int        `json:"ID"`
+	CustomerID         *int64     `json:"CustomerID,omitempty"`
+	ReceivedAt         time.Time  `json:"ReceivedAt"`
+	DeviceReportedTime *time.Time `json:"DeviceReportedTime,omitempty"`
+	Facility           int        `json:"Facility"`
+	FacilityLabel      string     `json:"Facility_Label"`
+	Priority           int        `json:"Priority"`
+	PriorityLabel      string     `json:"Priority_Label"`
+	FromHost           string     `json:"FromHost"`
+	Message            string     `json:"Message"`
+	NTSeverity         *int       `json:"NTSeverity,omitempty"`
+	Importance         *int       `json:"Importance,omitempty"`
+	EventSource        *string    `json:"EventSource,omitempty"`
+	EventUser          *string    `json:"EventUser,omitempty"`
+	EventCategory      *int       `json:"EventCategory,omitempty"`
+	EventID            *int       `json:"EventID,omitempty"`
+	EventBinaryData    *string    `json:"EventBinaryData,omitempty"`
+	MaxAvailable       *int       `json:"MaxAvailable,omitempty"`
+	CurrUsage          *int       `json:"CurrUsage,omitempty"`
+	MinUsage           *int       `json:"MinUsage,omitempty"`
+	MaxUsage           *int       `json:"MaxUsage,omitempty"`
+	InfoUnitID         *int       `json:"InfoUnitID,omitempty"`
+	SysLogTag          *string    `json:"SysLogTag,omitempty"`
+	EventLogType       *string    `json:"EventLogType,omitempty"`
+	GenericFileName    *string    `json:"GenericFileName,omitempty"`
+	SystemID           *int       `json:"SystemID,omitempty"`
 }
 
 // LogsResponse represents the response structure for /logs endpoint
@@ -412,15 +430,16 @@ func handleLogs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Parse filters
+	// Parse filters - MULTI-VALUE SUPPORT!
 	startDate := query.Get("start_date")
 	endDate := query.Get("end_date")
-	fromHost := query.Get("FromHost")
-	priorityStr := query.Get("Priority")
-	facilityStr := query.Get("Facility")
-	message := query.Get("Message")
+	fromHosts := query["FromHost"]           // Array!
+	priorities := query["Priority"]         // Array!
+	facilities := query["Facility"]         // Array!
+	messages := query["Message"]            // Array!
+	sysLogTags := query["SysLogTag"]       // Array!
 
-	where, args, err := buildFilters(startDate, endDate, fromHost, priorityStr, facilityStr, message)
+	where, args, err := buildFilters(startDate, endDate, fromHosts, priorities, facilities, messages, sysLogTags)
 	if err != nil {
 		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
@@ -435,9 +454,13 @@ func handleLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Query entries with pagination
+	// Query entries with pagination - ALL COLUMNS!
 	sqlQuery := fmt.Sprintf(`
-		SELECT ID, ReceivedAt, FromHost, Priority, Facility, Message 
+		SELECT ID, CustomerID, ReceivedAt, DeviceReportedTime, Facility, Priority, 
+		       FromHost, Message, NTSeverity, Importance, EventSource, EventUser,
+		       EventCategory, EventID, EventBinaryData, MaxAvailable, CurrUsage,
+		       MinUsage, MaxUsage, InfoUnitID, SysLogTag, EventLogType,
+		       GenericFileName, SystemID
 		FROM SystemEvents 
 		WHERE %s 
 		ORDER BY ReceivedAt DESC 
@@ -456,12 +479,90 @@ func handleLogs(w http.ResponseWriter, r *http.Request) {
 	var entries []LogEntry
 	for rows.Next() {
 		var entry LogEntry
-		if err := rows.Scan(&entry.ID, &entry.ReceivedAt, &entry.FromHost,
-			&entry.Priority, &entry.Facility, &entry.Message); err != nil {
+		var customerID, ntSeverity, importance, eventCategory, eventID sql.NullInt64
+		var maxAvail, currUsage, minUsage, maxUsage, infoUnitID, systemID sql.NullInt64
+		var deviceTime sql.NullTime
+		var eventSource, eventUser, eventBinary, sysLogTag, eventLogType, genericFile sql.NullString
+
+		if err := rows.Scan(
+			&entry.ID, &customerID, &entry.ReceivedAt, &deviceTime,
+			&entry.Facility, &entry.Priority, &entry.FromHost, &entry.Message,
+			&ntSeverity, &importance, &eventSource, &eventUser,
+			&eventCategory, &eventID, &eventBinary, &maxAvail, &currUsage,
+			&minUsage, &maxUsage, &infoUnitID, &sysLogTag, &eventLogType,
+			&genericFile, &systemID,
+		); err != nil {
 			log.Printf("Scan error: %v", err)
 			continue
 		}
 
+		// Map nullable fields
+		if customerID.Valid {
+			entry.CustomerID = &customerID.Int64
+		}
+		if deviceTime.Valid {
+			entry.DeviceReportedTime = &deviceTime.Time
+		}
+		if ntSeverity.Valid {
+			val := int(ntSeverity.Int64)
+			entry.NTSeverity = &val
+		}
+		if importance.Valid {
+			val := int(importance.Int64)
+			entry.Importance = &val
+		}
+		if eventSource.Valid {
+			entry.EventSource = &eventSource.String
+		}
+		if eventUser.Valid {
+			entry.EventUser = &eventUser.String
+		}
+		if eventCategory.Valid {
+			val := int(eventCategory.Int64)
+			entry.EventCategory = &val
+		}
+		if eventID.Valid {
+			val := int(eventID.Int64)
+			entry.EventID = &val
+		}
+		if eventBinary.Valid {
+			entry.EventBinaryData = &eventBinary.String
+		}
+		if maxAvail.Valid {
+			val := int(maxAvail.Int64)
+			entry.MaxAvailable = &val
+		}
+		if currUsage.Valid {
+			val := int(currUsage.Int64)
+			entry.CurrUsage = &val
+		}
+		if minUsage.Valid {
+			val := int(minUsage.Int64)
+			entry.MinUsage = &val
+		}
+		if maxUsage.Valid {
+			val := int(maxUsage.Int64)
+			entry.MaxUsage = &val
+		}
+		if infoUnitID.Valid {
+			val := int(infoUnitID.Int64)
+			entry.InfoUnitID = &val
+		}
+		if sysLogTag.Valid {
+			entry.SysLogTag = &sysLogTag.String
+		}
+		if eventLogType.Valid {
+			entry.EventLogType = &eventLogType.String
+		}
+		if genericFile.Valid {
+			entry.GenericFileName = &genericFile.String
+		}
+		if systemID.Valid {
+			val := int(systemID.Int64)
+			entry.SystemID = &val
+		}
+
+		// Add RFC labels
 		entry.PriorityLabel = rfcSeverity[entry.Priority]
 		if entry.PriorityLabel == "" {
 			entry.PriorityLabel = fmt.Sprintf("Unknown(%d)", entry.Priority)
@@ -518,16 +619,17 @@ func handleMeta(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse filters (all filters are supported)
+	// Parse filters (all filters are supported) - MULTI-VALUE!
 	query := r.URL.Query()
 	startDate := query.Get("start_date")
 	endDate := query.Get("end_date")
-	fromHost := query.Get("FromHost")
-	priorityStr := query.Get("Priority")
-	facilityStr := query.Get("Facility")
-	message := query.Get("Message")
+	fromHosts := query["FromHost"]
+	priorities := query["Priority"]
+	facilities := query["Facility"]
+	messages := query["Message"]
+	sysLogTags := query["SysLogTag"]
 
-	where, args, err := buildFilters(startDate, endDate, fromHost, priorityStr, facilityStr, message)
+	where, args, err := buildFilters(startDate, endDate, fromHosts, priorities, facilities, messages, sysLogTags)
 	if err != nil {
 		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
@@ -616,7 +718,8 @@ func handleMeta(w http.ResponseWriter, r *http.Request) {
 }
 
 // buildFilters constructs WHERE clause and arguments for SQL query
-func buildFilters(startDate, endDate, fromHost, priorityStr, facilityStr, message string) (string, []interface{}, error) {
+// Now supports MULTI-VALUE filters!
+func buildFilters(startDate, endDate string, fromHosts, priorities, facilities, messages, sysLogTags []string) (string, []interface{}, error) {
 	var conditions []string
 	var args []interface{}
 
@@ -655,39 +758,73 @@ func buildFilters(startDate, endDate, fromHost, priorityStr, facilityStr, messag
 	conditions = append(conditions, "ReceivedAt BETWEEN ? AND ?")
 	args = append(args, startDt, endDt)
 
-	// FromHost filter
-	if fromHost != "" {
-		conditions = append(conditions, "FromHost = ?")
-		args = append(args, fromHost)
+	// FromHost filter (MULTI-VALUE!)
+	if len(fromHosts) > 0 {
+		placeholders := make([]string, len(fromHosts))
+		for i, host := range fromHosts {
+			placeholders[i] = "?"
+			args = append(args, host)
+		}
+		conditions = append(conditions, fmt.Sprintf("FromHost IN (%s)", strings.Join(placeholders, ",")))
 	}
 
-	// Priority filter
-	if priorityStr != "" {
-		priority, err := strconv.Atoi(priorityStr)
-		if err != nil || priority < 0 || priority > 7 {
-			return "", nil, fmt.Errorf("Priority must be between 0 and 7")
+	// Priority filter (MULTI-VALUE!)
+	if len(priorities) > 0 {
+		validPriorities := []int{}
+		for _, pStr := range priorities {
+			p, err := strconv.Atoi(pStr)
+			if err != nil || p < 0 || p > 7 {
+				return "", nil, fmt.Errorf("Priority must be between 0 and 7")
+			}
+			validPriorities = append(validPriorities, p)
 		}
-		conditions = append(conditions, "Priority = ?")
-		args = append(args, priority)
+		placeholders := make([]string, len(validPriorities))
+		for i, p := range validPriorities {
+			placeholders[i] = "?"
+			args = append(args, p)
+		}
+		conditions = append(conditions, fmt.Sprintf("Priority IN (%s)", strings.Join(placeholders, ",")))
 	}
 
-	// Facility filter
-	if facilityStr != "" {
-		facility, err := strconv.Atoi(facilityStr)
-		if err != nil || facility < 0 || facility > 23 {
-			return "", nil, fmt.Errorf("Facility must be between 0 and 23")
+	// Facility filter (MULTI-VALUE!)
+	if len(facilities) > 0 {
+		validFacilities := []int{}
+		for _, fStr := range facilities {
+			f, err := strconv.Atoi(fStr)
+			if err != nil || f < 0 || f > 23 {
+				return "", nil, fmt.Errorf("Facility must be between 0 and 23")
+			}
+			validFacilities = append(validFacilities, f)
 		}
-		conditions = append(conditions, "Facility = ?")
-		args = append(args, facility)
+		placeholders := make([]string, len(validFacilities))
+		for i, f := range validFacilities {
+			placeholders[i] = "?"
+			args = append(args, f)
+		}
+		conditions = append(conditions, fmt.Sprintf("Facility IN (%s)", strings.Join(placeholders, ",")))
 	}
 
-	// Message filter
-	if message != "" {
-		if len(strings.TrimSpace(message)) < 2 {
-			return "", nil, fmt.Errorf("Message search must be at least 2 characters")
+	// Message filter (MULTI-VALUE with OR logic!)
+	if len(messages) > 0 {
+		messageConditions := []string{}
+		for _, msg := range messages {
+			if len(strings.TrimSpace(msg)) < 2 {
+				return "", nil, fmt.Errorf("Message search must be at least 2 characters")
+			}
+			messageConditions = append(messageConditions, "Message LIKE ?")
+			args = append(args, "%"+msg+"%")
 		}
-		conditions = append(conditions, "Message LIKE ?")
-		args = append(args, "%"+message+"%")
+		conditions = append(conditions, fmt.Sprintf("(%s)", strings.Join(messageConditions, " OR ")))
+	}
+
+	// SysLogTag filter (MULTI-VALUE!)
+	if len(sysLogTags) > 0 {
+		placeholders := make([]string, len(sysLogTags))
+		for i, tag := range sysLogTags {
+			placeholders[i] = "?"
+			args = append(args, tag)
+		}
+		conditions = append(conditions, fmt.Sprintf("SysLogTag IN (%s)", strings.Join(placeholders, ",")))
 	}
 
 	where := strings.Join(conditions, " AND ")

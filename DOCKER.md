@@ -2,168 +2,153 @@
 
 Simple test environment: **Build on host, runtime in container**.
 
-## Workflow
+**NEW in v0.2.2:** 🔥 **Live log generation** - realistic syslog messages appear every 10 seconds!
+
+## Quick Start
 
 ```bash
-# 1. Build on host
+# 1. Build binary
 make build-static
-# Creates: build/rsyslog-rest-api
 
 # 2. Start Docker
 cd docker
 docker-compose up -d
 
-# 3. Wait (about 20 seconds)
+# 3. Test (no API key needed by default!)
+curl http://localhost:8000/health
+curl "http://localhost:8000/logs?limit=5"
+```
+
+## Live Logs Feature 🔥
+
+The container now generates realistic syslog messages continuously!
+
+### What it does:
+- **Every 10 seconds:** 3 new log entries
+- **6 Hosts:** webserver01, webserver02, dbserver01, appserver01, mailserver01, firewall01
+- **Realistic messages:** Login attempts, database queries, errors, warnings
+- **Various priorities:** Info (most), Notice, Warning, Error, Critical (rare)
+
+### Watch it in action:
+```bash
+# Initial count
+curl -s "http://localhost:8000/logs" | jq .total
+# → 10 entries
+
+# Wait 30 seconds (3 bursts × 3 logs = 9 new logs)
+sleep 30
+
+# New count
+curl -s "http://localhost:8000/logs" | jq .total
+# → 19 entries (growing live!)
+```
+
+## What's Included
+
+- ✅ Ubuntu 24.04
+- ✅ rsyslog + MariaDB
+- ✅ 10 initial test entries
+- ✅ **Live log generator** (NEW!)
+- ✅ No API key required (optional)
+
+## Testing v0.2.2 Features
+
+### Multi-Value Filters (NEW!)
+
+```bash
+# Multiple hosts
+curl "http://localhost:8000/logs?FromHost=webserver01&FromHost=webserver02&limit=5"
+
+# Multiple priorities
+curl "http://localhost:8000/logs?Priority=3&Priority=4&limit=5"
+
+# Combined
+curl "http://localhost:8000/logs?FromHost=webserver01&FromHost=dbserver01&Priority=3&Priority=6"
+```
+
+### Extended Columns (NEW!)
+
+```bash
+# See all 25 columns
+curl "http://localhost:8000/logs?limit=1" | jq .rows[0]
+
+# Filter by SysLogTag
+curl "http://localhost:8000/logs?SysLogTag=nginx&limit=5"
+```
+
+### Run Test Suite
+
+```bash
+# Extended test suite for v0.2.2
+./test-v0.2.2.sh
+# Tests multi-value filters, extended columns, live data
+```
+
+## Enable API Key (Optional)
+
+Edit `docker-compose.yml`:
+```yaml
+environment:
+  - API_KEY=test123456789
+```
+
+Restart:
+```bash
+docker-compose down && docker-compose up -d
+```
+
+Then use:
+```bash
+curl -H "X-API-Key: test123456789" "http://localhost:8000/logs?limit=5"
+```
+
+## Monitor Live Logs
+
+```bash
+# Watch log generator
+docker exec rsyslog-rest-api-test tail -f /var/log/log-generator.log
+
+# Watch database grow
+watch -n 5 'docker exec rsyslog-rest-api-test mysql -N Syslog -e "SELECT COUNT(*) FROM SystemEvents"'
+
+# Container logs
 docker-compose logs -f
-# When you see "Environment Ready!" → Ctrl+C
-
-# 4. Test
-curl http://localhost:8000/health
-curl -H "X-API-Key: test123456789" "http://localhost:8000/logs?limit=5"
-```
-
-That's it! No buildx, no complicated build process.
-
-## What happens?
-
-### On the host (your machine):
-```bash
-make build-static
-```
-- Builds the binary with Go
-- Result: `build/rsyslog-rest-api` (8 MB)
-
-### In the container:
-```bash
-docker-compose up -d
-```
-1. ✅ Mounts `../build` to `/host-build` (read-only)
-2. ✅ Copies binary to `/opt/rsyslog-rest-api/`
-3. ✅ Starts MariaDB
-4. ✅ Creates database with 10 test entries
-5. ✅ Configures rsyslog
-6. ✅ Creates `.env` with API_KEY
-7. ✅ Starts the API
-
-## Prerequisites
-
-- Docker (no buildx!)
-- Docker Compose
-- Make
-- Go 1.21+ (for `make build-static`)
-
-## Testing the API
-
-```bash
-# Health Check
-curl http://localhost:8000/health
-
-# Get logs
-curl -H "X-API-Key: test123456789" "http://localhost:8000/logs?limit=5"
-
-# Only errors
-curl -H "X-API-Key: test123456789" "http://localhost:8000/logs?Priority=3"
-
-# All hosts
-curl -H "X-API-Key: test123456789" "http://localhost:8000/meta/FromHost"
-
-# Test suite
-./test.sh
 ```
 
 ## Troubleshooting
 
 ### Binary not found
-```
-✗ ERROR: Binary not found!
-```
-
-**Solution:**
 ```bash
 cd .. && make build-static
 cd docker && docker-compose up -d
 ```
 
-### API won't start
+### Live logs not working
 ```bash
-# View logs
-docker-compose logs
+# Check generator
+docker exec rsyslog-rest-api-test ps aux | grep log-generator
 
-# Inside container
-docker exec -it rsyslog-rest-api-test cat /var/log/rsyslog-rest-api.log
-```
+# View generator logs
+docker exec rsyslog-rest-api-test cat /var/log/log-generator.log
 
-## Restart
-
-```bash
-# After new build
-cd .. && make build-static
-cd docker && docker-compose restart
-
-# Complete rebuild
-cd docker
-docker-compose down
-docker-compose up -d --build
-```
-
-## What's included?
-
-- Ubuntu 24.04
-- rsyslog with MySQL support
-- MariaDB with test database "Syslog"
-- 10 sample log entries
-- Automatic setup on start
-
-**Container layout:**
-```
-/opt/rsyslog-rest-api/
-├── rsyslog-rest-api          # Binary (copied from host)
-└── .env                      # Auto-generated config
-
-/etc/rsyslog.d/mysql.conf     # rsyslog MySQL output
-/var/log/rsyslog-rest-api.log # API logs
-```
-
-## Database Access
-
-```bash
-# Inside container
-docker exec -it rsyslog-rest-api-test bash
-mysql -u rsyslog -ppassword Syslog
-
-# Check data
-SELECT ReceivedAt, FromHost, Priority, Message 
-FROM SystemEvents 
-ORDER BY ReceivedAt DESC 
-LIMIT 5;
-```
-
-### Add custom test data
-```bash
-docker exec -it rsyslog-rest-api-test mysql -u rsyslog -ppassword Syslog <<'EOF'
-INSERT INTO SystemEvents (ReceivedAt, FromHost, Priority, Facility, Message, SysLogTag)
-VALUES (NOW(), 'testhost', 6, 1, 'Custom test message', 'test');
-EOF
-
-# Verify
-curl -H "X-API-Key: test123456789" \
-  "http://localhost:8000/logs?FromHost=testhost"
+# Restart
+docker-compose restart
 ```
 
 ## Configuration
 
-### Change API Key
+### Adjust Log Generation Rate
 
-Edit `docker-compose.yml`:
-```yaml
-environment:
-  - API_KEY=your-new-key
+Edit `docker/log-generator.sh`:
+```bash
+INTERVAL=10  # Seconds between bursts (default: 10)
+LOGS_PER_BURST=3  # Logs per burst (default: 3)
 ```
 
-Then restart:
+Rebuild:
 ```bash
 docker-compose down
-docker-compose up -d
+docker-compose up -d --build
 ```
 
 ### Change Port
@@ -171,12 +156,23 @@ docker-compose up -d
 Edit `docker-compose.yml`:
 ```yaml
 ports:
-  - "8080:8000"  # Host:Container
+  - "8080:8000"
 ```
 
-Test with:
+## Database Access
+
 ```bash
-curl http://localhost:8080/health
+# Connect
+docker exec -it rsyslog-rest-api-test mysql -u rsyslog -ppassword Syslog
+
+# Check latest logs
+SELECT ReceivedAt, FromHost, Priority, Message 
+FROM SystemEvents 
+ORDER BY ReceivedAt DESC 
+LIMIT 5;
+
+# Watch count grow
+SELECT COUNT(*) FROM SystemEvents;
 ```
 
 ## Stop & Clean
@@ -185,78 +181,26 @@ curl http://localhost:8080/health
 # Stop (data persists)
 docker-compose stop
 
-# Stop and remove (data persists)
+# Remove (data persists)
 docker-compose down
 
-# Delete EVERYTHING (including data!)
+# Delete everything
 docker-compose down -v
-```
-
-## Performance Test
-
-```bash
-# Apache Bench (if installed)
-ab -n 1000 -c 10 -H "X-API-Key: test123456789" \
-  http://localhost:8000/logs?limit=10
-
-# Or simple timing
-time curl -H "X-API-Key: test123456789" \
-  "http://localhost:8000/logs?limit=100"
-```
-
-## Logs
-
-```bash
-# Container logs
-docker-compose logs -f
-
-# API logs
-docker exec -it rsyslog-rest-api-test \
-  tail -f /var/log/rsyslog-rest-api.log
-
-# MariaDB logs
-docker exec -it rsyslog-rest-api-test \
-  tail -f /var/log/mysql/error.log
 ```
 
 ## Advantages
 
-### 1. Simple
-- No complex build steps in container
-- Clear separation: build vs runtime
-- Easy to understand
+✅ **Simple** - No complex build  
+✅ **Fast** - Binary pre-built  
+✅ **Realistic** - Live log generation  
+✅ **Flexible** - Easy to restart  
+✅ **No buildx** - Standard Docker
 
-### 2. Fast
-- Binary already built when container starts
-- No waiting for Go build
-- Faster restart
+## What's Next?
 
-### 3. Flexible
-```bash
-# Change code
-nano main.go
+**v0.3.0 Preview:**
+- Negation filters (`exclude`, `not`)
+- More complex filtering
+- Ready to test with live data!
 
-# Rebuild (on host)
-make build-static
-
-# Restart container (uses new binary)
-cd docker
-docker-compose restart
-```
-
-### 4. No buildx issues
-- Works with standard Docker
-- No plugin required
-- Fewer dependencies
-
-## vs. Real Server
-
-| Feature | Docker | Real Server |
-|---------|--------|-------------|
-| Installation | Automatic | `make install` |
-| Binary | Auto-built on host | Copied from host |
-| API Start | Automatic | systemd |
-| Database | Auto-setup | Manual |
-| Test Data | Included | None |
-
-The container simulates the **complete installation** - perfect for testing!
+Full documentation: https://github.com/phil-bot/rsyslog-rest-api

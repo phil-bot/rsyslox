@@ -17,13 +17,13 @@ if [ ! -f /host-build/rsyslog-rest-api ]; then
 fi
 
 # Copy binary to installation directory
-echo "[1/8] Installing API binary..."
+echo "[1/9] Installing API binary..."
 cp /host-build/rsyslog-rest-api /opt/rsyslog-rest-api/
 chmod +x /opt/rsyslog-rest-api/rsyslog-rest-api
 echo "✓ Binary installed ($(ls -lh /opt/rsyslog-rest-api/rsyslog-rest-api | awk '{print $5}'))"
 
 # Start MariaDB
-echo "[2/8] Starting MariaDB..."
+echo "[2/9] Starting MariaDB..."
 mysqld_safe --datadir=/var/lib/mysql --user=mysql &
 sleep 5
 
@@ -37,17 +37,19 @@ for i in {1..30}; do
     sleep 1
 done
 
-# Create database and user
-echo "[3/8] Creating database..."
+# Create database and user FIRST
+echo "[3/9] Creating database..."
 mysql <<EOF
 CREATE DATABASE IF NOT EXISTS Syslog;
 CREATE USER IF NOT EXISTS 'rsyslog'@'localhost' IDENTIFIED BY 'password';
 GRANT ALL ON Syslog.* TO 'rsyslog'@'localhost';
 FLUSH PRIVILEGES;
 EOF
+echo "✓ Database created"
 
-# Create SystemEvents table
-mysql Syslog <<'EOF'
+# Create SystemEvents table manually (rsyslog doesn't always create it)
+echo "[4/9] Creating SystemEvents table..."
+mysql Syslog <<'TABLEEOF'
 CREATE TABLE IF NOT EXISTS SystemEvents (
     ID int unsigned not null auto_increment primary key,
     CustomerID bigint,
@@ -74,11 +76,27 @@ CREATE TABLE IF NOT EXISTS SystemEvents (
     GenericFileName VarChar(60),
     SystemID int NULL
 );
-EOF
+TABLEEOF
+echo "✓ SystemEvents table created"
 
-# Insert test data
-echo "[4/8] Inserting test data..."
-mysql Syslog <<'EOF'
+# Create rsyslog config
+echo "[5/9] Configuring rsyslog..."
+cat > /etc/rsyslog.d/mysql.conf <<'RSYEOF'
+module(load="ommysql")
+action(type="ommysql" server="localhost" db="Syslog" uid="rsyslog" pwd="password")
+RSYEOF
+chmod 600 /etc/rsyslog.d/mysql.conf
+echo "✓ rsyslog configured"
+
+# Start rsyslog
+echo "[6/9] Starting rsyslog..."
+rsyslogd 2>/dev/null || true
+sleep 2
+echo "✓ rsyslog started"
+
+# Insert initial test data
+echo "[7/9] Inserting initial test data..."
+mysql Syslog <<'DATAEOF'
 INSERT INTO SystemEvents (ReceivedAt, DeviceReportedTime, FromHost, Priority, Facility, Message, SysLogTag) VALUES
 (NOW() - INTERVAL 1 HOUR, NOW() - INTERVAL 1 HOUR, 'webserver01', 6, 1, 'User login successful: admin', 'sshd'),
 (NOW() - INTERVAL 2 HOUR, NOW() - INTERVAL 2 HOUR, 'webserver01', 3, 1, 'Failed login attempt from 192.168.1.100', 'sshd'),
@@ -90,38 +108,26 @@ INSERT INTO SystemEvents (ReceivedAt, DeviceReportedTime, FromHost, Priority, Fa
 (NOW() - INTERVAL 8 HOUR, NOW() - INTERVAL 8 HOUR, 'webserver02', 4, 1, 'Slow response time detected: 2.5s', 'nginx'),
 (NOW() - INTERVAL 9 HOUR, NOW() - INTERVAL 9 HOUR, 'mailserver01', 2, 3, 'Mail queue growing rapidly', 'postfix'),
 (NOW() - INTERVAL 10 HOUR, NOW() - INTERVAL 10 HOUR, 'mailserver01', 6, 3, 'Email sent successfully', 'postfix');
-EOF
+DATAEOF
 
 LOGCOUNT=$(mysql -N Syslog -e 'SELECT COUNT(*) FROM SystemEvents')
-echo "✓ Database ready ($LOGCOUNT log entries)"
-
-# Create rsyslog config
-echo "[5/8] Configuring rsyslog..."
-cat > /etc/rsyslog.d/mysql.conf <<'EOF'
-module(load="ommysql")
-action(type="ommysql" server="localhost" db="Syslog" uid="rsyslog" pwd="password")
-EOF
-chmod 600 /etc/rsyslog.d/mysql.conf
-
-# Start rsyslog
-rsyslogd
-echo "✓ rsyslog started"
+echo "✓ Initial data inserted ($LOGCOUNT entries)"
 
 # Configure API
-echo "[6/8] Configuring API..."
-cat > /opt/rsyslog-rest-api/.env <<EOF
-API_KEY=${API_KEY:-test123456789}
+echo "[8/9] Configuring API..."
+cat > /opt/rsyslog-rest-api/.env <<ENVEOF
+API_KEY=${API_KEY}
 SERVER_HOST=0.0.0.0
 SERVER_PORT=${SERVER_PORT:-8000}
 USE_SSL=false
 ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
 RSYSLOG_CONFIG_PATH=/etc/rsyslog.d/mysql.conf
-EOF
+ENVEOF
 
 echo "✓ API configured"
 
 # Start API
-echo "[7/8] Starting API..."
+echo "[9/9] Starting API..."
 cd /opt/rsyslog-rest-api
 ./rsyslog-rest-api > /var/log/rsyslog-rest-api.log 2>&1 &
 API_PID=$!
@@ -137,11 +143,24 @@ else
 fi
 
 # Test API
-echo "[8/8] Testing API..."
 if curl -s http://localhost:8000/health > /dev/null; then
     echo "✓ API health check passed"
 else
     echo "⚠ API health check failed (may still be starting)"
+fi
+
+# Start live log generator
+echo ""
+echo "Starting live log generator..."
+chmod +x /opt/rsyslog-rest-api/log-generator.sh
+/opt/rsyslog-rest-api/log-generator.sh > /var/log/log-generator.log 2>&1 &
+GENERATOR_PID=$!
+sleep 2
+
+if kill -0 $GENERATOR_PID 2>/dev/null; then
+    echo "✓ Live log generator started (PID: $GENERATOR_PID)"
+else
+    echo "⚠ Live log generator failed to start (optional)"
 fi
 
 echo ""
@@ -150,16 +169,30 @@ echo "✓ Environment Ready!"
 echo "================================================"
 echo ""
 echo "API:      http://localhost:8000"
-echo "API Key:  ${API_KEY:-test123456789}"
+echo "API Key:  ${API_KEY:-none (no auth)}"
 echo "Database: Syslog (rsyslog/password)"
-echo "Logs:     $LOGCOUNT entries"
+echo "Logs:     $LOGCOUNT entries (growing live!)"
+echo ""
+echo "Live Logs: New entries every 10 seconds"
+echo "  - Realistic messages from 6 hosts"
+echo "  - Various priorities and tags"
+echo "  - Watch: docker-compose logs -f"
 echo ""
 echo "Test commands:"
 echo "  curl http://localhost:8000/health"
-echo "  curl -H 'X-API-Key: ${API_KEY:-test123456789}' http://localhost:8000/logs?limit=5"
-echo "  curl -H 'X-API-Key: ${API_KEY:-test123456789}' http://localhost:8000/meta/FromHost"
+if [ -n "${API_KEY}" ]; then
+    echo "  curl -H 'X-API-Key: ${API_KEY}' http://localhost:8000/logs?limit=5"
+    echo "  curl -H 'X-API-Key: ${API_KEY}' http://localhost:8000/meta/FromHost"
+else
+    echo "  curl http://localhost:8000/logs?limit=5"
+    echo "  curl http://localhost:8000/meta/FromHost"
+fi
 echo ""
-echo "Logs: tail -f /var/log/rsyslog-rest-api.log"
+echo "Monitor:"
+echo "  API logs:  tail -f /var/log/rsyslog-rest-api.log"
+echo "  Live logs: tail -f /var/log/log-generator.log"
+echo "  DB count:  docker exec rsyslog-rest-api-test mysql Syslog -e 'SELECT COUNT(*) FROM SystemEvents'"
 echo ""
 
+# Keep container running
 exec "$@"

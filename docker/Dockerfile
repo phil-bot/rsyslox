@@ -1,31 +1,36 @@
 FROM ubuntu:24.04
 
-ENV DEBIAN_FRONTEND=noninteractive
-ENV TZ=Europe/Berlin
+# Prevent services from starting during apt-get install
+RUN echo '#!/bin/sh\nexit 101' > /usr/sbin/policy-rc.d && \
+    chmod +x /usr/sbin/policy-rc.d
 
-# Install rsyslog, MariaDB, and basic utilities
-RUN apt-get update && apt-get install -y \
-    rsyslog \
-    rsyslog-mysql \
-    mariadb-server \
-    mariadb-client \
-    curl \
+# Install dependencies
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        rsyslog \
+        rsyslog-mysql \
+        mariadb-server \
+        curl \
+        ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# MariaDB setup
-RUN mkdir -p /var/run/mysqld /var/lib/mysql && \
-    chown -R mysql:mysql /var/run/mysqld /var/lib/mysql && \
-    mysql_install_db --user=mysql --datadir=/var/lib/mysql
+# Remove policy-rc.d after installation
+RUN rm -f /usr/sbin/policy-rc.d
 
-# Create directories
+# Create installation directory
 RUN mkdir -p /opt/rsyslog-rest-api
+
+# Copy log generator
+COPY log-generator.sh /opt/rsyslog-rest-api/log-generator.sh
+RUN chmod +x /opt/rsyslog-rest-api/log-generator.sh
 
 # Copy entrypoint
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+# Expose API port
 EXPOSE 8000
-WORKDIR /root
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["tail", "-f", "/dev/null"]
