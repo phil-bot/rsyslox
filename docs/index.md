@@ -6,8 +6,6 @@ Welcome to the complete documentation of the rsyslog REST API project.
 
 This documentation is divided into different sections depending on your role and requirements.
 
-## 🚀 For End Users
-
 ### Getting Started
 
 | Document | Description |
@@ -24,15 +22,12 @@ This documentation is divided into different sections depending on your role and
 | [**Troubleshooting**](troubleshooting.md) | Common issues, solutions, and FAQ |
 | [**Changelog**](changelog.md) | Version history and breaking changes |
 
-## 🔧 For Administrators
-
 | Document | Description |
 |----------|-------------|
 | [**Deployment**](deployment.md) | Production setup, systemd, reverse proxy |
 | [**Security**](security.md) | Best practices for secure operation |
 | [**Performance**](performance.md) | Optimization and benchmarks |
 
-## 💻 For Developers
 
 | Document | Description |
 |----------|-------------|
@@ -83,14 +78,6 @@ docs/
 - **GitHub Issues:** [Report bugs](https://github.com/phil-bot/rsyslog-rest-api/issues)
 - **GitHub Discussions:** [Ask questions](https://github.com/phil-bot/rsyslog-rest-api/discussions)
 - **Troubleshooting:** [Browse FAQ](troubleshooting.md#faq)
-
-## 🔄 Versions
-
-This documentation is for:
-- **Current version:** v0.2.2
-- **Minimum version:** v0.2.0
-
-For older versions see [Changelog](changelog.md).
 
 ---
 
