@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="docs/rsyslox_light.svg" alt="rsyslox"/>
+  <img src="https://rsyslox.grothu.net/rsyslox_light.svg" alt="rsyslox"/>
 </div>
 
 # rsyslox
