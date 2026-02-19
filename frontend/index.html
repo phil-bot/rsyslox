@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{rsyslox} Dashboard</title>
+    <style>
+:root {
+    /* LIGHT THEME (Farben aus Logo 1) */
+    --primary: #0284c7;       /* Das kräftige Blau aus rsyslox */
+    --accent: #f59e0b;        /* Das warme Orange/Gelb der Klammer */
+    --logo-text: #475569;     /* Das edle Grau des Textes */
+
+    /* Backgrounds & Borders */
+    --bg: #f8fafc;
+    --card-bg: #ffffff;
+    --nav-bg: #ffffff;
+    --border: #e2e8f0;
+
+    /* Text */
+    --text-main: #0f172a;
+    --text-dim: #475569;
+
+    /* UI Elements */
+    --header-bg: #f1f5f9;
+    --header-text: #0f172a;
+    --ring: rgba(2, 132, 199, 0.15);
+    --warn: #f59e0b;
+}
+[data-theme="dark"] {
+    /* DARK THEME (Farben aus Logo 2) */
+    --primary: #06b6d4;       /* Das leuchtende Cyan aus dem Dark-Logo */
+    --accent: #facc15;        /* Das hellere Gelb der Klammer */
+    --logo-text: #94a3b8;     /* Das hellere Grau/Blau-Grau */
+
+    /* Backgrounds & Borders */
+    --bg: #0b1220;            /* Hintergrundfarbe aus deinem Dark-SVG */
+    --card-bg: #1e293b;
+    --nav-bg: #0b1220;
+    --border: #334155;
+
+    /* Text */
+    --text-main: #f1f5f9;
+    --text-dim: #94a3b8;
+
+    /* UI Elements */
+    --header-bg: #0f172a;
+    --header-text: #f1f5f9;
+    --ring: rgba(6, 182, 212, 0.2);
+    --warn: #facc15;
+}
+
+        body { font-family: "Inter", sans-serif; font-size: .9em; background: var(--bg); color: var(--text-main); margin: 0; }
+        .navbar { display: flex; justify-content: space-between; align-items: center; padding: 10px 24px; background: var(--nav-bg); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100; }
+        .nav-brand { display: flex; align-items: center; gap: 12px; }
+        .nav-links { display: flex; gap: 2em; margin-left: 40px; }
+        .nav-link { color: var(--text-dim); text-decoration: none; font-weight: normal; cursor: pointer; }
+        .nav-link.active { color: var(--primary); }
+
+        .container { padding: 2em; max-width: 1800px; margin: 0 auto; }
+        .card { background: var(--card-bg); border-radius: 1em; padding: 2em; border: 1px solid var(--border); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+
+        .flex-row { display: flex; align-items: flex-end; gap: 1em; margin-bottom: 1.5em; flex-wrap: wrap; }
+        .flex-grow { flex-grow: 1; }
+        .group-label { font-size: .7em; font-weight: 700; color: var(--text-dim);}
+
+        /* Pill Groups */
+        .pill-group { display: flex; background: var(--bg); padding: .5em; border-radius: .75em; gap: .25em; border: 1px solid var(--border); height: 2.75em; box-sizing: border-box; }
+        .pill { border: none; background: transparent; color: var(--text-dim); padding: .45em .75em; border-radius: .75em; cursor: pointer; font-size: .8em;  transition: 0.2s; white-space: nowrap; }
+        .pill.active { background: var(--primary); color: #fff !important; box-shadow: 0 .2em .4em var(--ring); }
+        .pill:disabled { opacity: 0.25; cursor: not-allowed; }
+
+/* Slider Switch */
+.refresh-control {
+    display: flex;
+    align-items: center;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    height: 40px;
+    padding: 0 12px;
+    gap: 10px;
+}
+
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 22px;
+}
+
+.switch input { opacity: 0; width: 0; height: 0; }
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    /* Nutzt die Border-Farbe für den "Aus"-Zustand für weicheren Look */
+    background-color: var(--border);
+    transition: .3s;
+    border-radius: 34px;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    left: 3px;
+    bottom: 3px;
+    /* Nutzt Card-Background für den Knopf, damit er sich abhebt */
+    background-color: var(--card-bg);
+    transition: .3s;
+    border-radius: 50%;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+/* Aktiv-Zustand: Nutzt dein Logo-Blau/Cyan */
+input:checked + .slider {
+    background-color: var(--primary);
+}
+
+input:checked + .slider:before {
+    transform: translateX(22px);
+}
+
+/* Status-Text daneben (An/Aus) */
+#refresh-status {
+    color: var(--text-main);
+    font-weight: 700;
+}
+
+
+        /* Multi-Select */
+        .custom-select { position: relative; width: 240px; }
+        .select-trigger { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 0 12px; height: 40px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
+        .select-trigger span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px; font-weight: 500; }
+        .select-dropdown { position: absolute; top: calc(100% + 8px); left: 0; right: 0; background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.15); z-index: 200; display: none; overflow: hidden; }
+        .select-dropdown.show { display: block; }
+        .select-search-wrap { padding: 10px; border-bottom: 1px solid var(--border); background: var(--bg); }
+        .select-search { width: 100%; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; outline: none; box-sizing: border-box; }
+        .select-options { max-height: 250px; overflow-y: auto; padding: 6px; }
+        .select-option { padding: 8px 12px; cursor: pointer; border-radius: 6px; display: flex; align-items: center; justify-content: space-between; }
+        .select-option:hover { background: var(--header-bg); }
+        .select-option.selected { background: var(--ring); color: var(--primary); font-weight: 600; }
+        .clear-btn { width: 18px; height: 18px; border-radius: 50%; background: var(--border); display: flex; align-items: center; justify-content: center; visibility: hidden; margin-right: 8px; font-weight: bold; }
+        .select-trigger:hover .clear-btn.show { visibility: visible; }
+
+        /* Suche */
+        .search-wrapper { position: relative; align-items: center; flex-grow: 1; min-width: 450px; }
+        .search-wrapper input { width: 100%; padding-right: 40px !important; }
+        .search-clear { position: absolute; right: .5em; top: .25em; cursor: pointer; color: var(--text-dim); font-size: 1.5em; font-weight: 700; z-index: 5; }
+
+        input[type="text"] { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text-main); padding: 0 12px; height: 40px; outline: none; box-sizing: border-box; }
+
+        /* Table */
+        .table-wrapper { width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+        table { width: 100%; border-collapse: collapse;  }
+        th { background: var(--header-bg); color: var(--header-text); padding: 1em; text-align: left; border-bottom: 2px solid var(--border); }
+        td { padding: 12px; border-bottom: 1px solid var(--border);  white-space: nowrap; }
+        td:last-child { }
+        td.col-message { width: 40% !important; cursor: pointer; overflow: hidden; text-overflow: ellipsis; }
+        .row-new { animation: flash 0.5s; }
+        @keyframes flash {
+            0% { background: var(--ring); }
+            100% { background: transparent; }
+        }
+        .row-new { animation: flash 1s ease-out; } /* Länger sichtbar */
+
+        /* Modal */
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); }
+        .modal-content { background: var(--card-bg); margin: 5% auto; padding: 24px; border-radius: 12px; width: 90%; max-width: 900px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); border: 1px solid var(--border); }
+        .modal-message-box { font-family: monospace; background: #0f172a; color: #38bdf8; padding: 20px; border-radius: 8px; white-space: pre-wrap; word-break: break-all; }
+        .btn-ui { background: var(--card-bg); border: 1px solid var(--border); color: var(--text-main); padding: 0 16px; border-radius: 8px; cursor: pointer;  height: 40px; display: inline-flex; align-items: center; }
+        .btn-style { background: var(--card-bg); border: 1px solid var(--border); color: var(--text-main); padding: 0 16px; border-radius: 8px; height: 40px; display: inline-flex; align-items: center; }
+        .btn-ui:disabled { opacity: 0.3; cursor: not-allowed; }
+        .btn-ui.primary { background: var(--primary); color: #fff; border: none; }
+        mark { background: var(--accent); color: #000; } /* Suche nutzt Akzentfarbe */
+        .text-warn { color: var(--accent); } /* Warnungen nutzen Akzentfarbe */
+        .host-link { color: var(--primary); }
+
+/* SVG Styling */
+.main-logo .logo-bg {
+    fill: var(--bg) !important;
+    fill-opacity: 0;
+    transition: fill 0.3s ease;
+}
+
+.main-logo .logo-bracket {
+    fill: var(--primary) !important;
+    transition: fill 0.3s ease;
+}
+
+.main-logo .logo-rsys {
+    fill: var(--logo-text) !important;
+    transition: fill 0.3s ease;
+}
+
+/* Die lox-Klammer in der Mitte (Spezialfarbe aus deinem Logo) */
+.main-logo .logo-lox {
+    fill: var(--accent) !important;
+}
+
+@media (max-width: 600px) {
+    body {
+    }
+
+    /* Die Tabellenzellen gezielt verkleinern */
+    td {
+    }
+
+    /* Die Host-Links und Labels etwas kleiner */
+    .host-link, .label-container {
+    }
+
+    /* Die Überschriften in der Card */
+    .group-label {
+    }
+}
+
+    </style>
+</head>
+<body>
+
+<nav class="navbar">
+    <div class="nav-brand">
+<svg class="main-logo" height="35px" viewBox="0 0 350 90" xmlns="http://www.w3.org/2000/svg">
+  <path class="logo-bg" fill="#fff" style="display:inline;stroke-width:.670822" d="M0 0h350v90H0z"/>
+  <g style="display:inline">
+    <path class="logo-bracket" d="M20.865 2.69q-5.376 0-8.32 1.023-2.945.96-4.16 3.072-1.152 2.112-1.153 5.504v9.408q0 2.944-1.855 4.287Q3.584 27.328 0 27.328v7.041q7.232 0 7.232 5.631v9.408q.001 3.52 1.217 5.633 1.28 2.112 4.223 3.008 3.008.96 8.193.959V52.16q-2.816-.127-4.224-1.023-1.344-.897-1.344-3.457v-9.344q0-6.271-6.53-7.295v-.385q6.53-1.023 6.53-7.424v-9.279q0-2.625 1.47-3.457 1.474-.895 4.098-.959z" style="fill:#0284c7" transform="translate(10.968 12.84)"/>
+    <path class="logo-rsys" d="M59.264 13.697q-3.52 0-5.696 1.791-2.113 1.729-3.904 5.121h-.256l-.767-6.273H34.625v3.969l9.408.832V43.84L33.6 44.8v3.84h26.24V44.8l-9.983-.96V31.424q0-3.456 1.215-6.336T54.4 20.48t4.864-1.728q1.6 0 3.007.45 1.41.382 2.434.958l1.535-5.055a16 16 0 0 0-3.136-1.025q-1.665-.384-3.84-.383m29.248 0q-6.207 0-9.727 2.303-3.456 2.304-3.457 6.848 0 2.752 1.281 4.545 1.28 1.728 3.647 3.007t5.697 2.752q3.328 1.409 5.055 2.305 1.728.895 2.305 1.791.64.832.64 2.176 0 2.496-1.793 3.84-1.728 1.28-5.951 1.28-3.777 0-6.53-.831a50 50 0 0 1-4.927-1.92v5.312q2.112 1.024 4.992 1.6 2.944.576 6.145.576 6.848 0 10.304-2.56 3.52-2.56 3.52-7.424 0-2.944-1.217-4.608-1.215-1.728-3.584-2.945-2.368-1.215-5.76-2.623-3.008-1.28-4.863-2.176-1.792-.896-2.625-1.857-.768-.96-.768-2.367 0-2.176 1.792-3.2 1.855-1.024 5.824-1.025 2.112 0 4.224.385 2.177.384 4.737 1.473l1.728-4.481q-2.752-1.152-5.312-1.664a27.4 27.4 0 0 0-5.377-.512m76.8 0q-6.207 0-9.728 2.303-3.456 2.304-3.455 6.848 0 2.752 1.28 4.545 1.28 1.728 3.648 3.007 2.367 1.28 5.695 2.752 3.329 1.409 5.057 2.305 1.728.895 2.304 1.791.64.832.639 2.176 0 2.496-1.791 3.84-1.728 1.28-5.953 1.28-3.776 0-6.528-.831a50 50 0 0 1-4.927-1.92v5.312q2.112 1.024 4.992 1.6 2.944.576 6.144.576 6.849 0 10.303-2.56 3.52-2.56 3.52-7.424 0-2.944-1.215-4.608-1.215-1.728-3.584-2.945-2.369-1.215-5.76-2.623-3.008-1.28-4.865-2.176-1.791-.896-2.623-1.857-.768-.96-.768-2.367 0-2.176 1.791-3.2 1.857-1.024 5.824-1.025 2.113 0 4.225.385 2.176.384 4.736 1.473L176 15.873q-2.752-1.152-5.31-1.664a27.4 27.4 0 0 0-5.378-.512m-56 .639 14.4 34.625-1.855 4.672q-1.28 3.264-2.88 4.672-1.601 1.472-4.545 1.472-1.024 0-2.112-.129a45 45 0 0 1-1.79-.255v4.416a20 20 0 0 0 2.11.32q1.216.192 2.497.191 3.712 0 5.95-1.408 2.306-1.407 3.714-3.967 1.472-2.496 2.687-5.824l14.4-38.785H136l-6.719 20.098a753 753 0 0 0-1.408 4.414 201 201 0 0 0-1.473 4.736h-.191a96 96 0 0 0-1.473-4.672 52 52 0 0 0-1.6-4.416l-8.19-20.16z" style="fill:#475569" transform="translate(10.968 12.84)"/>
+    <path class="logo-lox" d="M189.313 0v5.76l9.279 1.92v33.28l-11.52 1.92v5.76h31.36v-5.76l-10.559-1.92V0Zm51.648 13.057q-5.185 0-8.961 2.24t-5.824 6.336q-1.984 4.095-1.983 9.664 0 5.44 1.983 9.473 1.984 4.032 5.697 6.271 3.712 2.24 8.959 2.24 5.44 0 9.088-2.24 3.713-2.305 5.633-6.4 1.92-4.097 1.92-9.473 0-8.575-4.48-13.31-4.417-4.8-12.032-4.801m20.928.64 11.775 17.15-12.351 17.794h11.136l6.975-11.52 6.592 11.52h11.136l-12.03-17.793 12.03-17.15h-11.136l-6.655 11.007-6.336-11.008zm-20.928 6.848q3.775 0 5.44 2.943 1.663 2.88 1.663 7.68 0 4.928-1.728 7.809-1.727 2.816-5.375 2.816-3.712 0-5.568-2.88-1.793-2.88-1.793-7.745 0-4.928 1.793-7.744 1.855-2.88 5.568-2.88" style="fill:#f59e0b" transform="translate(10.968 12.84)"/>
+    <path class="logo-bracket" d="M307.201 2.69v6.847q2.816.064 4.16 1.024 1.409.896 1.409 3.457v9.343q0 6.273 6.527 7.295v.385q-6.528 1.024-6.527 7.424v9.28q0 2.623-1.473 3.456-1.472.832-4.096.96v6.847q5.377-.064 8.32-1.024 3.007-.96 4.159-3.072t1.152-5.504V40q0-3.008 1.793-4.287 1.855-1.344 5.44-1.344v-7.04q-7.233 0-7.233-5.632V12.29q0-3.585-1.28-5.633-1.215-2.112-4.16-3.008-2.943-.96-8.19-.959" style="fill:#0284c7" transform="translate(10.968 12.84)"/>
+  </g>
+</svg>
+
+        <div class="nav-links">
+            <a class="nav-link active">Live Logs</a>
+            <a class="nav-link">Statistiken</a>
+        </div>
+    </div>
+    <div style="display: flex; gap: 16px; align-items: center;">
+        <div class="filter-group">
+            <div class="refresh-control btn-style">
+                Auto-Refresh
+                <label class="switch">
+
+                    <input type="checkbox" id="refresh-toggle" onchange="toggleRefresh(this.checked)" checked>
+                    <span class="slider"></span>
+                </label>
+                <span id="refresh-status">An</span>
+            </div>
+        </div>
+        <div class="btn-style">
+            <span style="padding-right:1em;">Status</span>
+        <div id="status-dot" style="width: 10px; height: 10px; background: #22c55e; border-radius: 50%;"></div>
+        </div>
+        <button class="btn-ui" onclick="toggleTheme()">🌓</button>
+    </div>
+</nav>
+
+<div class="container">
+    <div id="detailModal" class="modal">
+        <div class="modal-content">
+            <div style="display:flex; justify-content:space-between; margin-bottom: 20px;">
+                <h2 style="margin:0">Details</h2>
+                <button class="btn-ui" onclick="closeModal()">&times;</button>
+            </div>
+            <div id="modalMeta" style="display:grid; grid-template-columns:120px 1fr; gap:10px; margin-bottom:20px;"></div>
+            <div id="modalMessage" class="modal-message-box"></div>
+            <div style="display:flex; justify-content:space-between; margin-top:20px;">
+                <div>
+                    <button class="btn-ui" id="modal-prev" onclick="navModal(-1)">←</button>
+                    <button class="btn-ui" id="modal-next" onclick="navModal(1)">→</button>
+                    <span id="modal-pos" style="margin-left:10px" class="text-dim"></span>
+                </div>
+                <button class="btn-ui primary" onclick="copyModalContent()">Kopieren</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="flex-row">
+            <div class="filter-group">
+                <span class="group-label">Zeitraum</span>
+                <div class="pill-group" id="time-selector">
+                    <button class="pill" data-val="1h">1h</button>
+                    <button class="pill active" data-val="24h">24h</button>
+                    <button class="pill" data-val="7d">7d</button>
+                    <button class="pill" data-val="30d">30d</button>
+                </div>
+            </div>
+            <div class="filter-group">
+                <span class="group-label">Prio</span>
+                <div id="pri-selector" class="pill-group"></div>
+            </div>
+            <div class="filter-group">
+                <span class="group-label">Facility</span>
+                <div id="fac-selector" class="pill-group"></div>
+            </div>
+            <div class="flex-grow"></div>
+
+            <div class="filter-group">
+                <span class="group-label">Zeilen</span>
+                <div class="pill-group" id="limit-selector">
+                    <button class="pill" data-val="10">10</button>
+                    <button class="pill active" data-val="25">25</button>
+                    <button class="pill" data-val="50">50</button>
+                    <button class="pill" data-val="100">100</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex-row">
+            <div class="filter-group">
+                <span class="group-label">Hosts</span>
+                <div class="custom-select" id="ms-host">
+                    <div class="select-trigger" onclick="toggleMS('ms-host')">
+                        <span class="trigger-text">Alle Hosts</span>
+                        <div style="display:flex; align-items:center;">
+                            <div class="clear-btn" onclick="clearMS(event, 'ms-host')">&times;</div>
+                            <div style="font-size:10px; color:var(--text-dim)">▼</div>
+                        </div>
+                    </div>
+                    <div class="select-dropdown">
+                        <div class="select-search-wrap"><input type="text" class="select-search" placeholder="Suchen..." oninput="filterMS('ms-host')"></div>
+                        <div class="select-options"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="filter-group">
+                <span class="group-label">SysLogTag</span>
+                <div class="custom-select" id="ms-tag">
+                    <div class="select-trigger" onclick="toggleMS('ms-tag')">
+                        <span class="trigger-text">Alle SysLogTags</span>
+                        <div style="display:flex; align-items:center;">
+                            <div class="clear-btn" onclick="clearMS(event, 'ms-tag')">&times;</div>
+                            <div style="font-size:10px; color:var(--text-dim)">▼</div>
+                        </div>
+                    </div>
+                    <div class="select-dropdown">
+                        <div class="select-search-wrap"><input type="text" class="select-search" placeholder="Suchen..." oninput="filterMS('ms-tag')"></div>
+                        <div class="select-options"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="search-wrapper filter-group">
+                <span class="group-label">Suche</span>
+                <div style="position:relative; display:flex;">
+                    <input type="text" id="search-box" placeholder="Nachricht filtern..." onkeyup="debounceSearch()">
+                    <span class="search-clear" onclick="clearSearch()">&times;</span>
+                </div>
+            </div>
+            <button class="btn-ui" onclick="exportToCSV()">Export</button>
+        </div>
+
+        <div class="table-wrapper">
+            <table>
+                <thead><tr><th>Time</th><th>FromHost</th><th>SyslogTag</th><th>Facility</th><th>Priority</th><th class="col-message">Message</th></tr></thead>
+                <tbody id="table-body"></tbody>
+            </table>
+        </div>
+
+        <div style="display:flex; justify-content:center; align-items:center; margin-top:24px; gap:12px;">
+            <button class="btn-ui" onclick="goToPage(0)">Erste</button>
+            <button class="btn-ui" id="prev-btn" onclick="changePage(-1)">Zurück</button>
+            <span id="page-display" style="min-width:180px; text-align:center;"></span>
+            <button class="btn-ui" id="next-btn" onclick="changePage(1)">Weiter</button>
+            <button class="btn-ui" id="last-btn" onclick="goToLastPage()">Letzte</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const API_LOGS = '/logs', API_META = '/meta';
+    const STATIC_PRIO = [{v:0,l:"Emerg"},{v:1,l:"Alert"},{v:2,l:"Crit"},{v:3,l:"Error"},{v:4,l:"Warn"},{v:5,l:"Notice"},{v:6,l:"Info"},{v:7,l:"Debug"}];
+    const STATIC_FAC = [{v:0,l:"Kern"},{v:1,l:"User"},{v:2,l:"Mail"},{v:3,l:"Daemon"},{v:4,l:"Auth"},{v:9,l:"Cron"}];
+
+    let offset = 0, totalRows = 0, currentData = [], selectedTime = '24h', selectedLimit = 10, searchTimeout, refreshInterval;
+    let selectedPri = new Set(), selectedFac = new Set(), selectedHosts = new Set(), selectedTags = new Set(), lastTopId = null, currentModalIdx = -1;
+
+    function toggleTheme() {
+        const d = document.documentElement;
+        const t = d.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+        d.setAttribute('data-theme', t); localStorage.setItem('theme', t);
+    }
+    if(localStorage.getItem('theme') === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+
+    async function initFilters() {
+        const start = getStartDate();
+        const configs = [{id:'ms-host',p:'FromHost'},{id:'ms-tag',p:'SysLogTag'},{id:'pri-selector',p:'Priority',s:STATIC_PRIO,set:selectedPri},{id:'fac-selector',p:'Facility',s:STATIC_FAC,set:selectedFac}];
+
+        for (const cfg of configs) {
+            try {
+                const res = await fetch(`${API_META}/${cfg.p}?start_date=${start}`);
+                const data = await res.json();
+                const avail = new Set(data.map(i => String(i.val ?? i.Name ?? i)));
+                if (cfg.s) {
+                    const el = document.getElementById(cfg.id); el.innerHTML = '';
+                    cfg.s.forEach(o => {
+                        const v = String(o.v);
+                        const btn = document.createElement('button');
+                        btn.className = `pill ${cfg.set.has(v)?'active':''}`;
+                        btn.innerText = o.l; btn.dataset.val = v;
+                        btn.disabled = !avail.has(v);
+                        btn.onclick = () => { if(btn.disabled) return; btn.classList.toggle('active'); cfg.set.has(v)?cfg.set.delete(v):cfg.set.add(v); resetAndLoad(); };
+                        el.appendChild(btn);
+                    });
+                } else {
+                    const cont = document.querySelector(`#${cfg.id} .select-options`); cont.innerHTML = '';
+                    data.forEach(i => {
+                        const v = String(i.val ?? i.Name ?? i);
+                        const div = document.createElement('div');
+                        div.className = `select-option ${(cfg.id==='ms-host'?selectedHosts:selectedTags).has(v)?'selected':''}`;
+                        div.innerText = i.label ?? i.Name ?? i;
+                        div.onclick = () => {
+                            const s = cfg.id==='ms-host'?selectedHosts:selectedTags;
+                            s.has(v)?s.delete(v):s.add(v); div.classList.toggle('selected');
+                            updateMSTrigger(cfg.id); resetAndLoad();
+                        };
+                        cont.appendChild(div);
+                    });
+                    updateMSTrigger(cfg.id);
+                }
+            } catch(e) {}
+        }
+        resetAndLoad();
+    }
+
+async function loadData() {
+    const q = document.getElementById('search-box').value;
+    const p = new URLSearchParams({ limit: selectedLimit, offset, start_date: getStartDate() });
+    selectedPri.forEach(v=>p.append('Priority',v));
+    selectedFac.forEach(v=>p.append('Facility',v));
+    selectedHosts.forEach(v=>p.append('FromHost',v));
+    selectedTags.forEach(v=>p.append('SysLogTag',v));
+    if(q) p.append('Message', q);
+
+    try {
+        document.getElementById('status-dot').style.background = '#f59e0b';
+        const res = await fetch(`${API_LOGS}?${p.toString()}`);
+        const data = await res.json();
+        const rows = data.rows || [];
+
+        let flash = false;
+        if (rows.length > 0 && offset === 0) {
+            // Vergleich über ID oder ReceivedAt (was vorhanden ist)
+            const currentTopId = rows[0].ID || rows[0].ReceivedAt;
+            if (lastTopId && lastTopId !== currentTopId) {
+                flash = true;
+            }
+            lastTopId = currentTopId;
+        }
+
+        currentData = rows;
+        totalRows = data.total || 0;
+        renderTable(rows, q, flash);
+        updatePagination();
+        document.getElementById('status-dot').style.background = '#22c55e';
+    } catch(e) {
+        document.getElementById('status-dot').style.background = '#ef4444';
+    }
+}
+
+
+function renderTable(rows, q, flash) {
+    const b = document.getElementById('table-body');
+    b.innerHTML = '';
+    if(!rows.length) {
+        b.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:40px;">Keine Logs gefunden.</td></tr>';
+        return;
+    }
+    rows.forEach((r, i) => {
+        const tr = document.createElement('tr');
+        // Nur die tatsächlich neuen Einträge (Index 0 oder alle bei Flash) markieren
+        if(flash && i === 0 && offset === 0) tr.classList.add('row-new');
+
+        tr.innerHTML = `<td>${r.ReceivedAt.replace('T',' ').split('.')[0]}</td>
+            <td style="color:var(--primary);cursor:pointer;font-weight:500" onclick="quickHost('${r.FromHost}')">${r.FromHost}</td>
+            <td class="text-dim">${r.SysLogTag}</td>
+            <td><span class="${r.Facility}">${r.Facility_Label || r.Facility}</span></td>
+            <td><span class="${r.Priority}">${r.Priority_Label || r.Priority}</span></td>
+            <td class="col-message" onclick="openModal(${i})">${q ? highlight(r.Message, q) : r.Message}</td>`;
+        b.appendChild(tr);
+    });
+}
+
+
+    function highlight(t, q) {
+        if(!q) return t;
+        const escaped = q.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        const r = new RegExp(`(${escaped})`, 'gi');
+        return String(t).replace(r, '<mark>$1</mark>');
+    }
+
+    function toggleMS(id) { document.querySelectorAll('.select-dropdown').forEach(d => d.parentElement.id!==id && d.classList.remove('show')); document.querySelector(`#${id} .select-dropdown`).classList.toggle('show'); }
+    function filterMS(id) { const v = document.querySelector(`#${id} .select-search`).value.toLowerCase(); document.querySelectorAll(`#${id} .select-option`).forEach(o => o.style.display = o.innerText.toLowerCase().includes(v)?'flex':'none'); }
+    function updateMSTrigger(id) {
+        const s = id==='ms-host'?selectedHosts:selectedTags;
+        const t = document.querySelector(`#${id} .trigger-text`);
+        const c = document.querySelector(`#${id} .clear-btn`);
+        t.innerText = s.size ? (s.size===1?[...s]:s.size+' gewählt') : (id==='ms-host'?'Alle Hosts':'Alle SysLogTag');
+        s.size > 0 ? c.classList.add('show') : c.classList.remove('show');
+    }
+    function clearMS(e, id) { e.stopPropagation(); (id==='ms-host'?selectedHosts:selectedTags).clear(); updateMSTrigger(id); resetAndLoad(); }
+    function quickHost(v) { selectedHosts.clear(); selectedHosts.add(v); updateMSTrigger('ms-host'); resetAndLoad(); }
+    function getStartDate() { const n = new Date(); const h = {'1h':1,'24h':24,'7d':168,'30d':720}[selectedTime]; n.setHours(n.getHours()-h); return n.toISOString(); }
+    function resetAndLoad() { offset = 0; loadData(); }
+    function debounceSearch() { clearTimeout(searchTimeout); searchTimeout = setTimeout(resetAndLoad, 400); }
+    function clearSearch() { document.getElementById('search-box').value = ''; resetAndLoad(); }
+    function changePage(d) { offset += d * selectedLimit; loadData(); window.scrollTo(0,0); }
+    function goToPage(p) { offset = p * selectedLimit; loadData(); }
+    function goToLastPage() { offset = Math.floor((totalRows-1)/selectedLimit)*selectedLimit; loadData(); }
+
+function updatePagination() {
+    const cur = Math.floor(offset / selectedLimit) + 1;
+    const max = Math.ceil(totalRows / selectedLimit) || 1;
+    document.getElementById('page-display').innerText = `Seite ${cur} von ${max} (${totalRows})`;
+
+    const isFirstPage = offset === 0;
+    const isLastPage = (offset + selectedLimit) >= totalRows;
+
+    document.getElementById('prev-btn').disabled = isFirstPage;
+    // Der "Erste" Button wird nun korrekt deaktiviert:
+    const firstBtn = document.querySelector("button[onclick='goToPage(0)']");
+    if (firstBtn) firstBtn.disabled = isFirstPage;
+
+    document.getElementById('next-btn').disabled = isLastPage;
+    document.getElementById('last-btn').disabled = isLastPage;
+}
+
+
+    function openModal(idx) {
+        currentModalIdx = idx; const d = currentData[idx];
+        document.getElementById('modalMeta').innerHTML = `<div>Zeit</div><div>${d.ReceivedAt}</div><div>Host</div><div>${d.FromHost}</div><div>Prio</div><div>${d.Priority_Label}</div>`;
+        document.getElementById('modalMessage').innerText = d.Message;
+        document.getElementById('modal-pos').innerText = `${idx+1}/${currentData.length}`;
+        document.getElementById('detailModal').style.display='block';
+        document.getElementById('modal-prev').disabled = idx === 0;
+        document.getElementById('modal-next').disabled = idx === currentData.length - 1;
+    }
+
+    function navModal(d) { const n = currentModalIdx+d; if(n>=0 && n<currentData.length) openModal(n); }
+    function closeModal() { document.getElementById('detailModal').style.display='none'; }
+
+    function toggleRefresh(enable) {
+        const statusText = document.getElementById('refresh-status');
+        if (statusText) statusText.innerText = enable ? 'An' : 'Aus';
+        if (refreshInterval) clearInterval(refreshInterval);
+        if (enable) refreshInterval = setInterval(loadData, 5000);
+        else refreshInterval = null;
+    }
+
+async function copyModalContent() {
+    const msg = document.getElementById('modalMessage').innerText;
+    const btn = document.querySelector("#detailModal .btn-ui.primary");
+    const originalText = btn.innerText;
+
+    try {
+        await navigator.clipboard.writeText(msg);
+        btn.innerText = "Kopiert! ✓";
+        btn.style.background = "#22c55e"; // Optionales grünes Feedback
+
+        setTimeout(() => {
+            btn.innerText = originalText;
+            btn.style.background = ""; // Zurück zur CSS-Variable
+        }, 2000);
+    } catch (err) {
+        btn.innerText = "Fehler!";
+        setTimeout(() => btn.innerText = originalText, 2000);
+    }
+}
+
+
+    document.addEventListener('click', e => {
+        const p = e.target.closest('.pill'); if(!p || p.onclick) return;
+        const g = p.closest('.pill-group');
+        if(g && (g.id === 'time-selector' || g.id === 'limit-selector')) {
+            g.querySelectorAll('.pill').forEach(b => b.classList.remove('active')); p.classList.add('active');
+            if(g.id==='time-selector') { selectedTime = p.dataset.val; initFilters(); }
+            else { selectedLimit = parseInt(p.dataset.val); resetAndLoad(); }
+        }
+    });
+
+    window.onclick = e => { if(!e.target.closest('.custom-select')) document.querySelectorAll('.select-dropdown').forEach(d => d.classList.remove('show')); };
+    window.onload = () => { initFilters(); toggleRefresh(document.getElementById('refresh-toggle').checked);
+     // Stellt sicher, dass die "10" als aktiv markiert ist
+    document.querySelectorAll('#limit-selector .pill').forEach(b => {
+        b.classList.toggle('active', parseInt(b.dataset.val) === selectedLimit);
+    });
+    };
+</script>
+</body>
+</html>
