@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 
+	"github.com/phil-bot/rsyslox/internal/cleanup"
 	"github.com/phil-bot/rsyslox/internal/config"
 	"github.com/phil-bot/rsyslox/internal/database"
 	"github.com/phil-bot/rsyslox/internal/server"
@@ -28,6 +29,17 @@ func main() {
 		log.Fatalf("❌ Failed to connect to database: %v", err)
 	}
 	defer db.Close()
+
+	// Start cleanup service
+	cleaner := cleanup.New(db.DB, cleanup.Config{
+		Enabled:             cfg.CleanupEnabled,
+		DiskPath:            cfg.CleanupDiskPath,
+		ThresholdPercent:    cfg.CleanupThresholdPercent,
+		BatchSize:           cfg.CleanupBatchSize,
+		Interval:            cfg.CleanupInterval,
+	})
+	cleaner.Start()
+	defer cleaner.Stop()
 
 	// Create and configure server
 	srv := server.New(cfg, db, Version)

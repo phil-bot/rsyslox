@@ -9,7 +9,9 @@ services:
     volumes:
       # Mount build directory to copy binary from
       - ../build:/host-build:ro
+      - ../frontend/index.html:/opt/rsyslox/index.html:ro
     environment:
+      - TZ=Europe/Berlin
       - SERVER_PORT=8000
       - ALLOWED_ORIGINS=*
       # Uncomment to enable API key authentication:

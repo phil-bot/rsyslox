@@ -14,6 +14,7 @@ import (
 type DB struct {
 	*sql.DB
 	AvailableColumns []string
+	PriorityMode     PriorityMode
 }
 
 // Connect establishes a connection to the database
@@ -60,30 +61,15 @@ func (db *DB) initialize() error {
 		return err
 	}
 
+	// Detect priority storage format (legacy vs modern rsyslog)
+	db.PriorityMode = db.detectPriorityMode()
+
 	return nil
 }
-/*
-// createIndexes creates recommended indexes for better performance
-func (db *DB) createIndexes() error {
-	indexes := []string{
-		"CREATE INDEX IF NOT EXISTS idx_receivedat ON SystemEvents(ReceivedAt)",
-		"CREATE INDEX IF NOT EXISTS idx_fromhost ON SystemEvents(FromHost)",
-		"CREATE INDEX IF NOT EXISTS idx_priority ON SystemEvents(Priority)",
-		"CREATE INDEX IF NOT EXISTS idx_facility ON SystemEvents(Facility)",
-	}
 
-	for _, index := range indexes {
-		if _, err := db.Exec(index); err != nil {
-			log.Printf("Warning: failed to create index: %v", err)
-			// Continue on index errors (they may already exist)
-		}
-	}
-
-	log.Println("✓ Database indexes checked/created")
-	return nil
-}
-*/
-// loadColumns loads all column names from SystemEvents table
+// loadColumns loads all column names from SystemEvents table.
+// "Severity" is added as a virtual column — it is computed from the Priority
+// column at query time and is not a real database column.
 func (db *DB) loadColumns() error {
 	query := "SHOW COLUMNS FROM SystemEvents"
 	rows, err := db.Query(query)
@@ -104,11 +90,16 @@ func (db *DB) loadColumns() error {
 		}
 	}
 
-	log.Printf("✓ Loaded %d columns from SystemEvents table", len(db.AvailableColumns))
+	// Add virtual "Severity" column — computed from Priority at query time
+	db.AvailableColumns = append(db.AvailableColumns, "Severity")
+
+	log.Printf("✓ Loaded %d columns from SystemEvents table (+ virtual: Severity)",
+		len(db.AvailableColumns)-1)
 	return nil
 }
 
 // IsValidColumn checks if a column name exists in the SystemEvents table
+// or is a supported virtual column.
 func (db *DB) IsValidColumn(column string) bool {
 	for _, col := range db.AvailableColumns {
 		if col == column {

@@ -42,7 +42,7 @@ const (
 	FacilityLocal7   = 23
 )
 
-// RFCSeverity maps priority values to RFC-5424 severity labels
+// RFCSeverity maps severity values (0-7) to RFC-5424 labels
 var RFCSeverity = map[int]string{
 	0: "Emergency",
 	1: "Alert",
@@ -82,15 +82,15 @@ var RFCFacility = map[int]string{
 	23: "local7",
 }
 
-// GetPriorityLabel returns the RFC-5424 label for a priority value
-func GetPriorityLabel(priority int) string {
-	if label, ok := RFCSeverity[priority]; ok {
+// GetSeverityLabel returns the RFC-5424 label for a severity value (0-7).
+func GetSeverityLabel(severity int) string {
+	if label, ok := RFCSeverity[severity]; ok {
 		return label
 	}
-	return fmt.Sprintf("Unknown(%d)", priority)
+	return fmt.Sprintf("Unknown(%d)", severity)
 }
 
-// GetFacilityLabel returns the RFC-5424 label for a facility value
+// GetFacilityLabel returns the RFC-5424 label for a facility value.
 func GetFacilityLabel(facility int) string {
 	if label, ok := RFCFacility[facility]; ok {
 		return label
@@ -98,12 +98,24 @@ func GetFacilityLabel(facility int) string {
 	return fmt.Sprintf("Unknown(%d)", facility)
 }
 
-// IsValidPriority checks if a priority value is valid (0-7)
-func IsValidPriority(priority int) bool {
-	return priority >= 0 && priority <= 7
+// GetPriorityLabel is kept for internal compatibility.
+// Prefer GetSeverityLabel for new code.
+func GetPriorityLabel(severity int) string {
+	return GetSeverityLabel(severity)
 }
 
-// IsValidFacility checks if a facility value is valid (0-23)
+// IsValidSeverity checks if a severity value is valid (0-7).
+func IsValidSeverity(severity int) bool {
+	return severity >= 0 && severity <= 7
+}
+
+// IsValidPriority is kept for internal compatibility.
+// Prefer IsValidSeverity for new code.
+func IsValidPriority(priority int) bool {
+	return IsValidSeverity(priority)
+}
+
+// IsValidFacility checks if a facility value is valid (0-23).
 func IsValidFacility(facility int) bool {
 	return facility >= 0 && facility <= 23
 }

@@ -5,7 +5,9 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // Config holds all application configuration
@@ -33,6 +35,13 @@ type Config struct {
 	// Paths
 	InstallPath     string
 	RsyslogConfPath string
+
+	// Cleanup
+	CleanupEnabled           bool
+	CleanupDiskPath          string
+	CleanupThresholdPercent  float64
+	CleanupBatchSize         int
+	CleanupInterval          time.Duration
 }
 
 // Load loads configuration from environment variables
@@ -66,6 +75,9 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	// Cleanup configuration
+	cfg.loadCleanupConfig()
+
 	// Validate configuration
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -73,6 +85,34 @@ func Load() (*Config, error) {
 
 	cfg.logConfiguration()
 	return cfg, nil
+}
+
+// loadCleanupConfig loads the cleanup/housekeeping configuration.
+func (c *Config) loadCleanupConfig() {
+	c.CleanupEnabled = getEnv("CLEANUP_ENABLED", "false") == "true"
+	c.CleanupDiskPath = getEnv("CLEANUP_DISK_PATH", "/var/lib/mysql")
+
+	threshold := getEnvFloat("CLEANUP_THRESHOLD_PERCENT", 85.0)
+	if threshold <= 0 || threshold > 100 {
+		log.Printf("⚠️  CLEANUP_THRESHOLD_PERCENT out of range (%.1f), using default 85%%", threshold)
+		threshold = 85.0
+	}
+	c.CleanupThresholdPercent = threshold
+
+	batchSize := getEnvInt("CLEANUP_BATCH_SIZE", 1000)
+	if batchSize <= 0 {
+		log.Printf("⚠️  CLEANUP_BATCH_SIZE must be positive, using default 1000")
+		batchSize = 1000
+	}
+	c.CleanupBatchSize = batchSize
+
+	intervalStr := getEnv("CLEANUP_INTERVAL", "15m")
+	interval, err := time.ParseDuration(intervalStr)
+	if err != nil || interval <= 0 {
+		log.Printf("⚠️  CLEANUP_INTERVAL invalid (%q), using default 15m", intervalStr)
+		interval = 15 * time.Minute
+	}
+	c.CleanupInterval = interval
 }
 
 // loadDatabaseConfig loads database configuration with fallback options
@@ -169,22 +209,29 @@ func (c *Config) logConfiguration() {
 	log.Println("Configuration loaded:")
 	log.Printf("  Server: %s:%s", c.ServerHost, c.ServerPort)
 	log.Printf("  SSL: %v", c.UseSSL)
-	
+
 	if c.DBConnectionString != "" {
 		log.Printf("  Database: [connection string]")
 	} else {
 		log.Printf("  Database: %s@%s/%s", c.DBUser, c.DBHost, c.DBName)
 	}
-	
+
 	if c.APIKey == "" {
 		log.Println("  ⚠️  WARNING: Running without API key authentication!")
 		log.Println("     Set API_KEY environment variable for production.")
 	} else {
 		log.Printf("  API Key: %s...%s", c.APIKey[:4], c.APIKey[len(c.APIKey)-4:])
 	}
-	
+
 	log.Printf("  CORS Origins: %v", c.AllowedOrigins)
 	log.Printf("  Install Path: %s", c.InstallPath)
+
+	if c.CleanupEnabled {
+		log.Printf("  Cleanup: enabled (disk: %s, threshold: %.1f%%, interval: %s, batch: %d)",
+			c.CleanupDiskPath, c.CleanupThresholdPercent, c.CleanupInterval, c.CleanupBatchSize)
+	} else {
+		log.Printf("  Cleanup: disabled")
+	}
 }
 
 // getEnv gets an environment variable with a default value
@@ -194,4 +241,30 @@ func getEnv(key, defaultValue string) string {
 		return defaultValue
 	}
 	return value
+}
+
+// getEnvFloat gets an environment variable as float64 with a default value
+func getEnvFloat(key string, defaultValue float64) float64 {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+	f, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return defaultValue
+	}
+	return f
+}
+
+// getEnvInt gets an environment variable as int with a default value
+func getEnvInt(key string, defaultValue int) int {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+	i, err := strconv.Atoi(value)
+	if err != nil {
+		return defaultValue
+	}
+	return i
 }

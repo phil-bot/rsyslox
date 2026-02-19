@@ -29,6 +29,7 @@ New to rsyslox? Start here:
 - [Production Deployment](guides/deployment.md)
 - [Security Best Practices](guides/security.md)
 - [Performance Tuning](guides/performance.md)
+- [Cleanup / Housekeeping](guides/cleanup.md)
 - [Troubleshooting](guides/troubleshooting.md)
 
 ### Development
@@ -47,6 +48,7 @@ New to rsyslox? Start here:
 - [Generate API Key](getting-started/configuration.md#api-key)
 - [Database Configuration](getting-started/configuration.md#database)
 - [SSL/TLS Setup](guides/security.md#ssltls)
+- [Cleanup Setup](guides/cleanup.md#configuration)
 
 ### API Usage
 - [Health Check](api/reference.md#get-health)

@@ -17,6 +17,7 @@
   * [Deployment](guides/deployment.md)
   * [Security](guides/security.md)
   * [Performance](guides/performance.md)
+  * [Cleanup / Housekeeping](guides/cleanup.md)
   * [Troubleshooting](guides/troubleshooting.md)
 
 * Development

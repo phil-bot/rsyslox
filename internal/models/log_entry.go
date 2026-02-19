@@ -5,7 +5,16 @@ import (
 	"time"
 )
 
-// LogEntry represents a single log entry from the SystemEvents table
+// LogEntry represents a single log entry from the SystemEvents table.
+//
+// Priority/Severity handling:
+// Older rsyslog versions (< 8.2204.0) stored the Severity (0-7) in the
+// Priority column. Newer versions store the RFC PRI value (Facility*8 + Severity).
+// ScanFromRows detects the format per row and always exposes:
+//   - Priority: RFC PRI value (Facility*8 + Severity)
+//   - Severity: RFC Severity value (0-7)
+//   - Severity_Label: human-readable severity label
+//   - Facility / Facility_Label: unchanged
 type LogEntry struct {
 	ID                 int        `json:"ID"`
 	CustomerID         *int64     `json:"CustomerID"`
@@ -14,7 +23,8 @@ type LogEntry struct {
 	Facility           int        `json:"Facility"`
 	FacilityLabel      string     `json:"Facility_Label"`
 	Priority           int        `json:"Priority"`
-	PriorityLabel      string     `json:"Priority_Label"`
+	Severity           int        `json:"Severity"`
+	SeverityLabel      string     `json:"Severity_Label"`
 	FromHost           string     `json:"FromHost"`
 	Message            string     `json:"Message"`
 	NTSeverity         *int       `json:"NTSeverity"`
@@ -35,16 +45,24 @@ type LogEntry struct {
 	SystemID           *int       `json:"SystemID"`
 }
 
-// ScanFromRows scans a database row into a LogEntry
+// ScanFromRows scans a database row into a LogEntry.
+//
+// The raw Priority column value is inspected per row to determine the storage format:
+//   - rawPriority > 7  → modern format: Priority = PRI, Severity = Priority % 8
+//   - rawPriority <= 7 → legacy format: Severity = Priority, Priority = Facility*8 + Severity
+//
+// This handles mixed datasets (after a rsyslog version upgrade) correctly.
 func (e *LogEntry) ScanFromRows(rows *sql.Rows) error {
 	var customerID, ntSeverity, importance, eventCategory, eventID sql.NullInt64
 	var maxAvail, currUsage, minUsage, maxUsage, infoUnitID, systemID sql.NullInt64
 	var deviceTime sql.NullTime
 	var eventSource, eventUser, eventBinary, sysLogTag, eventLogType, genericFile sql.NullString
 
+	var rawPriority int
+
 	err := rows.Scan(
 		&e.ID, &customerID, &e.ReceivedAt, &deviceTime,
-		&e.Facility, &e.Priority, &e.FromHost, &e.Message,
+		&e.Facility, &rawPriority, &e.FromHost, &e.Message,
 		&ntSeverity, &importance, &eventSource, &eventUser,
 		&eventCategory, &eventID, &eventBinary, &maxAvail, &currUsage,
 		&minUsage, &maxUsage, &infoUnitID, &sysLogTag, &eventLogType,
@@ -53,6 +71,21 @@ func (e *LogEntry) ScanFromRows(rows *sql.Rows) error {
 	if err != nil {
 		return err
 	}
+
+	// Per-row format detection: derive RFC-compliant Priority and Severity
+	if rawPriority > 7 {
+		// Modern rsyslog (>= 8.2204.0): Priority column already contains RFC PRI
+		e.Priority = rawPriority
+		e.Severity = rawPriority % 8
+	} else {
+		// Legacy rsyslog (< 8.2204.0): Priority column contains Severity (0-7)
+		e.Severity = rawPriority
+		e.Priority = e.Facility*8 + rawPriority
+	}
+
+	// RFC labels
+	e.SeverityLabel = GetSeverityLabel(e.Severity)
+	e.FacilityLabel = GetFacilityLabel(e.Facility)
 
 	// Map nullable fields
 	if customerID.Valid {
@@ -119,10 +152,6 @@ func (e *LogEntry) ScanFromRows(rows *sql.Rows) error {
 		val := int(systemID.Int64)
 		e.SystemID = &val
 	}
-
-	// Add RFC labels
-	e.PriorityLabel = GetPriorityLabel(e.Priority)
-	e.FacilityLabel = GetFacilityLabel(e.Facility)
 
 	return nil
 }

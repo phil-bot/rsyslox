@@ -132,6 +132,58 @@ ALLOWED_ORIGINS=https://app1.com,https://app2.com
 
 **Security:** Never use `*` in production!
 
+### Cleanup / Housekeeping
+
+Automatically deletes old log entries when disk usage exceeds a configurable threshold. Disabled by default.
+
+→ See [Cleanup Guide](../guides/cleanup.md) for details.
+
+#### CLEANUP_ENABLED
+
+Enables or disables the cleanup service.
+
+```bash
+CLEANUP_ENABLED=false  # Default: false
+```
+
+#### CLEANUP_DISK_PATH
+
+Filesystem path (mount point) to monitor for disk usage. Should point to the partition where MySQL/MariaDB stores its data.
+
+```bash
+CLEANUP_DISK_PATH=/var/lib/mysql  # Default
+```
+
+#### CLEANUP_THRESHOLD_PERCENT
+
+Maximum allowed disk usage in percent. When usage exceeds this value, the oldest records are deleted.
+
+```bash
+CLEANUP_THRESHOLD_PERCENT=85  # Default: 85
+```
+
+Valid range: `1`–`99`. Do not set too close to `100` — MySQL needs free space for internal operations.
+
+#### CLEANUP_BATCH_SIZE
+
+Number of records to delete per cleanup run.
+
+```bash
+CLEANUP_BATCH_SIZE=1000  # Default: 1000
+```
+
+Larger values free up space faster but create more database load per cycle.
+
+#### CLEANUP_INTERVAL
+
+How often the disk usage is checked. Uses Go duration format.
+
+```bash
+CLEANUP_INTERVAL=15m  # Default: 15m
+```
+
+Examples: `5m`, `15m`, `1h`, `30s`
+
 ## Complete Example
 
 ### Development Configuration
@@ -166,6 +218,12 @@ DB_HOST=db.internal.example.com
 DB_NAME=Syslog
 DB_USER=rsyslog_api
 DB_PASS=strong-secure-password-here
+
+CLEANUP_ENABLED=true
+CLEANUP_DISK_PATH=/var/lib/mysql
+CLEANUP_THRESHOLD_PERCENT=85
+CLEANUP_BATCH_SIZE=1000
+CLEANUP_INTERVAL=15m
 ```
 
 ## File Permissions
@@ -215,3 +273,4 @@ Look for:
 - [Quick Start Tutorial](quick-start.md)
 - [Deploy to Production](../guides/deployment.md)
 - [Security Best Practices](../guides/security.md)
+- [Cleanup / Housekeeping](../guides/cleanup.md)

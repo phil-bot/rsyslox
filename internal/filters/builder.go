@@ -26,6 +26,31 @@ func (b *Builder) AddDateRange(start, end time.Time) {
 	b.args = append(b.args, start, end)
 }
 
+// AddSeverityFilter adds a severity filter using Priority MOD 8.
+//
+// Using MOD 8 makes the filter universally correct regardless of whether the
+// database uses legacy format (Priority = Severity 0-7) or modern format
+// (Priority = RFC PRI = Facility*8 + Severity):
+//   - Legacy: Priority is already 0-7, so Priority MOD 8 = Priority ✓
+//   - Modern: Priority MOD 8 extracts the Severity component ✓
+//   - Mixed:  both cases are handled correctly by the same expression ✓
+func (b *Builder) AddSeverityFilter(values []int) {
+	if len(values) == 0 {
+		return
+	}
+
+	placeholders := make([]string, len(values))
+	for i := range placeholders {
+		placeholders[i] = "?"
+	}
+
+	b.conditions = append(b.conditions,
+		fmt.Sprintf("Priority MOD 8 IN (%s)", strings.Join(placeholders, ",")))
+	for _, v := range values {
+		b.args = append(b.args, v)
+	}
+}
+
 // AddMultiValueFilter adds a multi-value IN filter for a column
 func (b *Builder) AddMultiValueFilter(column string, values []interface{}) {
 	if len(values) == 0 {
@@ -37,7 +62,7 @@ func (b *Builder) AddMultiValueFilter(column string, values []interface{}) {
 		placeholders[i] = "?"
 	}
 
-	b.conditions = append(b.conditions, 
+	b.conditions = append(b.conditions,
 		fmt.Sprintf("%s IN (%s)", column, strings.Join(placeholders, ",")))
 	b.args = append(b.args, values...)
 }
@@ -48,7 +73,6 @@ func (b *Builder) AddStringMultiValue(column string, values []string) {
 		return
 	}
 
-	// Convert to []interface{}
 	interfaceValues := make([]interface{}, len(values))
 	for i, v := range values {
 		interfaceValues[i] = v
@@ -63,7 +87,6 @@ func (b *Builder) AddIntMultiValue(column string, values []int) {
 		return
 	}
 
-	// Convert to []interface{}
 	interfaceValues := make([]interface{}, len(values))
 	for i, v := range values {
 		interfaceValues[i] = v
@@ -84,15 +107,13 @@ func (b *Builder) AddMessageSearch(terms []string) {
 		b.args = append(b.args, "%"+term+"%")
 	}
 
-	// Wrap in parentheses for OR logic
-	b.conditions = append(b.conditions, 
+	b.conditions = append(b.conditions,
 		fmt.Sprintf("(%s)", strings.Join(messageConditions, " OR ")))
 }
 
 // Build returns the final WHERE clause and arguments
 func (b *Builder) Build() (string, []interface{}) {
 	if len(b.conditions) == 0 {
-		// Default: no filters means "everything"
 		return "1=1", []interface{}{}
 	}
 

@@ -8,33 +8,39 @@ import (
 	"github.com/phil-bot/rsyslox/internal/models"
 )
 
-// ValidatePriorities validates priority values and returns them as integers
-func ValidatePriorities(priorities []string) ([]int, error) {
-	if len(priorities) == 0 {
+// ValidateSeverities validates severity values (0-7) and returns them as integers.
+func ValidateSeverities(severities []string) ([]int, error) {
+	if len(severities) == 0 {
 		return nil, nil
 	}
 
-	var validPriorities []int
-	for _, pStr := range priorities {
-		p, err := strconv.Atoi(pStr)
+	var valid []int
+	for _, sStr := range severities {
+		s, err := strconv.Atoi(sStr)
 		if err != nil {
-			return nil, models.NewAPIError(models.ErrCodeInvalidPriority,
-				fmt.Sprintf("'%s' is not a valid integer", pStr)).
-				WithField("Priority")
+			return nil, models.NewAPIError(models.ErrCodeInvalidSeverity,
+				fmt.Sprintf("'%s' is not a valid integer", sStr)).
+				WithField("Severity")
 		}
-		if !models.IsValidPriority(p) {
-			return nil, models.NewAPIError(models.ErrCodeInvalidPriority,
-				fmt.Sprintf("value %d is out of range (must be 0-7)", p)).
-				WithField("Priority").
-				WithDetails("See RFC-5424 for valid priority levels")
+		if !models.IsValidSeverity(s) {
+			return nil, models.NewAPIError(models.ErrCodeInvalidSeverity,
+				fmt.Sprintf("value %d is out of range (must be 0-7)", s)).
+				WithField("Severity").
+				WithDetails("See RFC-5424 for valid severity levels")
 		}
-		validPriorities = append(validPriorities, p)
+		valid = append(valid, s)
 	}
 
-	return validPriorities, nil
+	return valid, nil
 }
 
-// ValidateFacilities validates facility values and returns them as integers
+// ValidatePriorities is a deprecated alias for ValidateSeverities.
+// The query parameter ?Priority= is accepted as an alias for ?Severity=.
+func ValidatePriorities(priorities []string) ([]int, error) {
+	return ValidateSeverities(priorities)
+}
+
+// ValidateFacilities validates facility values and returns them as integers.
 func ValidateFacilities(facilities []string) ([]int, error) {
 	if len(facilities) == 0 {
 		return nil, nil
@@ -60,7 +66,7 @@ func ValidateFacilities(facilities []string) ([]int, error) {
 	return validFacilities, nil
 }
 
-// ValidateMessages validates message search terms
+// ValidateMessages validates message search terms.
 func ValidateMessages(messages []string) ([]string, error) {
 	if len(messages) == 0 {
 		return nil, nil
@@ -80,7 +86,7 @@ func ValidateMessages(messages []string) ([]string, error) {
 	return validMessages, nil
 }
 
-// ValidateDateRange validates and parses date range parameters
+// ValidateDateRange validates and parses date range parameters.
 func ValidateDateRange(startDateStr, endDateStr string) (time.Time, time.Time, error) {
 	var startDate, endDate time.Time
 	var err error
@@ -114,13 +120,13 @@ func ValidateDateRange(startDateStr, endDateStr string) (time.Time, time.Time, e
 	// Validate range
 	if startDate.After(endDate) {
 		return time.Time{}, time.Time{}, models.NewAPIError(
-			models.ErrCodeInvalidDateRange, 
+			models.ErrCodeInvalidDateRange,
 			"start_date cannot be after end_date")
 	}
 
 	if endDate.Sub(startDate) > 90*24*time.Hour {
 		return time.Time{}, time.Time{}, models.NewAPIError(
-			models.ErrCodeInvalidDateRange, 
+			models.ErrCodeInvalidDateRange,
 			"date range cannot exceed 90 days").
 			WithDetails(fmt.Sprintf("Requested range: %.1f days", endDate.Sub(startDate).Hours()/24))
 	}
@@ -128,7 +134,7 @@ func ValidateDateRange(startDateStr, endDateStr string) (time.Time, time.Time, e
 	return startDate, endDate, nil
 }
 
-// ValidatePagination validates limit and offset parameters
+// ValidatePagination validates limit and offset parameters.
 func ValidatePagination(limitStr, offsetStr string) (int, int, error) {
 	const (
 		defaultLimit = 10

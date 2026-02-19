@@ -8,7 +8,7 @@ type LogsResponse struct {
 	Rows   []LogEntry `json:"rows"`
 }
 
-// MetaValue represents a meta value with optional label (for Priority/Facility)
+// MetaValue represents a meta value with optional label (for Severity/Facility)
 type MetaValue struct {
 	Val   int    `json:"val"`
 	Label string `json:"label"`
@@ -35,12 +35,12 @@ type RootResponse struct {
 	Endpoints map[string]string `json:"endpoints"`
 }
 
-// APIError represents a structured API error response (NEW in v0.2.3+)
+// APIError represents a structured API error response
 type APIError struct {
-	Code    string `json:"code"`              // Error code (e.g., "INVALID_PARAMETER")
-	Message string `json:"message"`           // Human-readable message
-	Details string `json:"details,omitempty"` // Optional additional details
-	Field   string `json:"field,omitempty"`   // Optional field name for validation errors
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Details string `json:"details,omitempty"`
+	Field   string `json:"field,omitempty"`
 }
 
 // Error implements the error interface
@@ -60,8 +60,12 @@ const (
 	ErrCodeNotFound         = "NOT_FOUND"
 	ErrCodeInvalidColumn    = "INVALID_COLUMN"
 	ErrCodeInvalidDateRange = "INVALID_DATE_RANGE"
-	ErrCodeInvalidPriority  = "INVALID_PRIORITY"
+	ErrCodeInvalidSeverity  = "INVALID_SEVERITY"
 	ErrCodeInvalidFacility  = "INVALID_FACILITY"
+
+	// ErrCodeInvalidPriority is kept for backward compatibility.
+	// Prefer ErrCodeInvalidSeverity for new code.
+	ErrCodeInvalidPriority = ErrCodeInvalidSeverity
 )
 
 // NewAPIError creates a new APIError
