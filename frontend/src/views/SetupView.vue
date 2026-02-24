@@ -204,6 +204,7 @@ legend {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg);
+  color: var(--text);
   font-size: .875rem;
   width: 100%;
   transition: border-color .15s;
