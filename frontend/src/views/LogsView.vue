@@ -33,7 +33,7 @@
 
       <div v-if="sidebarOpen && isMobile" class="sidebar-backdrop" @click="sidebarOpen = false" />
 
-      <div class="logs-main" ref="logsMainRef">
+      <div class="logs-main" :class="{ 'is-paginated': !showAll }" ref="logsMainRef">
         <div v-if="error" class="error-banner">
           ⚠ {{ error }}
           <button @click="fetchLogs">Retry</button>
@@ -238,5 +238,8 @@ function shiftTimeWindow(direction) {
 .sidebar-backdrop {
   position: fixed; inset: 0;
   background: rgba(0,0,0,.3); z-index: 40;
+}
+.is-paginated :deep(.table-scroll) {
+  overflow: hidden !important;
 }
 </style>
