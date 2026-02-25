@@ -81,27 +81,8 @@ CREATE TABLE IF NOT EXISTS SystemEvents (
 SQL
 echo "✓ Database ready"
 
-# ── Seed data ─────────────────────────────────────────────────────────────────
-echo "[4/5] Inserting seed log entries..."
-mysql "${DB_NAME}" <<'SQL'
-INSERT INTO SystemEvents
-  (ReceivedAt,DeviceReportedTime,Facility,Priority,FromHost,Message,SysLogTag,InfoUnitID,SystemID)
-VALUES
-  (NOW()-INTERVAL 10 MINUTE, NOW()-INTERVAL 10 MINUTE, 1, 6,  'webserver01', 'nginx: GET /api/health 200 0.001s',  'nginx',    1, 0),
-  (NOW()-INTERVAL  9 MINUTE, NOW()-INTERVAL  9 MINUTE, 3, 5,  'dbserver01',  'mysqld: InnoDB: Buffer pool loaded', 'mysqld',   1, 0),
-  (NOW()-INTERVAL  8 MINUTE, NOW()-INTERVAL  8 MINUTE, 4, 4,  'webserver02', 'sshd: Failed password for root',     'sshd',     1, 0),
-  (NOW()-INTERVAL  7 MINUTE, NOW()-INTERVAL  7 MINUTE, 1, 3,  'appserver01', 'node: Unhandled exception in worker','node',     1, 0),
-  (NOW()-INTERVAL  6 MINUTE, NOW()-INTERVAL  6 MINUTE, 1, 6,  'webserver01', 'nginx: GET /dashboard 200 0.042s',   'nginx',    1, 0),
-  (NOW()-INTERVAL  5 MINUTE, NOW()-INTERVAL  5 MINUTE, 3, 6,  'dbserver01',  'mysqld: 100 queries in last second', 'mysqld',   1, 0),
-  (NOW()-INTERVAL  4 MINUTE, NOW()-INTERVAL  4 MINUTE, 9, 5,  'mailserver01','postfix: queued for delivery',       'postfix',  1, 0),
-  (NOW()-INTERVAL  3 MINUTE, NOW()-INTERVAL  3 MINUTE, 4, 4,  'firewall01',  'iptables: blocked 192.168.1.99:4444','iptables', 1, 0),
-  (NOW()-INTERVAL  2 MINUTE, NOW()-INTERVAL  2 MINUTE, 1, 3,  'webserver02', 'nginx: upstream timed out (110)',    'nginx',    1, 0),
-  (NOW()-INTERVAL  1 MINUTE, NOW()-INTERVAL  1 MINUTE, 3, 6,  'dbserver01',  'mysqld: ready for connections',      'mysqld',   1, 0);
-SQL
-echo "✓ 10 seed entries inserted"
-
 # ── Start rsyslox without config → setup wizard ───────────────────────────────
-echo "[5/5] Starting rsyslox in setup wizard mode..."
+echo "[4/5] Starting rsyslox in setup wizard mode..."
 
 /opt/rsyslox/rsyslox > /var/log/rsyslox.log 2>&1 &
 API_PID=$!
@@ -129,14 +110,6 @@ echo "    DB Name:     ${DB_NAME}"
 echo "    DB User:     ${DB_USER}"
 echo "    DB Password: ${DB_PASS}"
 echo ""
-echo "  10 log entries are already seeded and waiting."
+echo "[5/5] Starting log-generator.sh"
 echo ""
-
-exec "$@"
-
-echo ""
-echo "================================================"
-echo "  Starting Log-Generator"
-echo "================================================"
-echo ""
-/opt/rsyslox/log-generator.sh
+/host-scripts/log-generator.sh

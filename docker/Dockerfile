@@ -21,10 +21,6 @@ RUN rm -f /usr/sbin/policy-rc.d
 # Create installation directory
 RUN mkdir -p /opt/rsyslox
 
-# Copy log generator
-COPY ../scripts/log-generator.sh /opt/rsyslox/log-generator.sh
-RUN chmod +x /opt/rsyslox/log-generator.sh
-
 # Copy entrypoint
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

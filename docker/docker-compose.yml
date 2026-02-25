@@ -8,6 +8,7 @@ services:
       - "8000:8000"
     volumes:
       - ../build:/host-build:ro
+      - ../scripts:/host-scripts:ro
     environment:
       - TZ=Europe/Berlin
       - DB_HOST=localhost
