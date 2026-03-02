@@ -37,7 +37,11 @@ Use HTTPS in production. Options:
 
 **Reverse proxy (recommended):** nginx or Apache handle TLS termination. See [Deployment Guide](deployment.md).
 
-**Built-in SSL:** rsyslox can terminate TLS directly. Place `cert.pem` and `key.pem` in `/etc/rsyslox/certs/`, then enable SSL in **Admin → Server**.
+**Built-in SSL:** rsyslox can terminate TLS directly. Enable SSL in **Admin → Server**, then either:
+- Click **Generate Self-Signed Certificate** for a self-signed ECDSA P-256 cert (development/internal use), or
+- Upload your own certificate and key via **Upload Custom Certificate**.
+
+If `use_ssl = true` is set in `config.toml` and no certificate files exist, rsyslox generates a self-signed certificate automatically on startup.
 
 ## CORS
 

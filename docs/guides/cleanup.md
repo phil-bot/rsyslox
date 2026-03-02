@@ -1,6 +1,6 @@
 # Cleanup / Housekeeping
 
-Automatic deletion of old log entries to prevent disk overflow.
+Automatic deletion of old log entries to prevent disk overflow. Configured in **Admin → Database → Log Cleanup**.
 
 ## Overview
 
@@ -24,7 +24,7 @@ Every <interval>
 
 ## Configuration
 
-Configure via **Admin panel → Cleanup**. Changes take effect immediately — no restart needed.
+Configure via **Admin panel → Database → Log Cleanup**. Changes take effect immediately — no restart needed.
 
 | Setting | Description | Default |
 |---|---|---|
@@ -165,7 +165,7 @@ Check actual disk usage — it may genuinely be below the threshold:
 df -h /var/lib/mysql
 ```
 
-Verify the service is enabled in **Admin → Cleanup**.
+Verify the service is enabled in **Admin → Database → Log Cleanup**.
 
 **Disk still fills up**
 

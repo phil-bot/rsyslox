@@ -6,6 +6,84 @@ All notable changes to rsyslox.
 
 ---
 
+## [v0.4.3] - 2026-03-02
+
+This release overhauls the Admin panel with fully editable server and database
+configuration, browser-triggered server restart, SSL certificate management, and
+a live disk usage widget. The filter panel receives visual fixes and message
+search highlighting.
+
+### Added
+
+**Admin Panel — Server Settings**
+- Host and port are now editable fields (previously read-only after setup)
+- `use_ssl` toggle is now saved as part of the main Save action (no separate auto-save)
+- Restart-required banner: appears at the top of the admin panel after saving any
+  setting that requires a restart; stays visible across tab navigation until a
+  restart is performed or dismissed
+- Browser-triggered server restart (`POST /api/admin/restart`) using `syscall.Exec`
+  — replaces the current process in-place without requiring a process manager; the
+  frontend polls `/health` and reloads automatically once the server is back
+- Context-sensitive hint texts on **Host** and **Allowed Origins** fields
+
+**Admin Panel — SSL / TLS**
+- New SSL section appears under Server settings when SSL is enabled
+- `POST /api/admin/ssl/generate` — generates a self-signed ECDSA P-256 certificate
+  (10-year validity) and writes it to the configured cert/key paths
+- `POST /api/admin/ssl/upload` — multipart upload of a custom certificate and
+  private key; rolls back the cert file if key upload fails
+- Auto-generation on startup: `config.EnsureSSLCerts()` is called before
+  `ListenAndServeTLS`; if either cert or key is missing, a self-signed certificate
+  is generated automatically — no manual step required
+- `internal/config/ssl.go` — shared cert generation logic used by both startup
+  and the admin HTTP endpoint
+
+**Admin Panel — Database**
+- Database settings are now a fully editable form: host, port, name, user, password
+- Password field accepts a new value to change it (blank = keep current);
+  value is AES-GCM encrypted before writing to `config.toml`
+
+**Admin Panel — Cleanup (merged into Database tab)**
+- Cleanup configuration moved from its own tab into the Database tab as a sub-section
+- Info callout warns that disk-usage monitoring reads the **local** filesystem and
+  only works correctly when the database runs on the same host as rsyslox
+- Disk usage widget: live progress bar (green < 75 %, amber < 90 %, red ≥ 90 %),
+  used / free / total in human-readable units; refreshable on demand
+- `GET /api/admin/disk` — returns `used_percent`, `used_bytes`, `free_bytes`,
+  `total_bytes` for the configured `disk_path` via `syscall.Statfs`
+
+**Filter Panel**
+- Message search results highlighted inline in the Message column with `<mark>` tags
+
+### Changed
+
+- Facility pills use a dedicated `.fac-badge-btn` class; no longer inherit the white
+  foreground colour from severity badges
+- Tag filter section converted from a searchable list to a pill layout (consistent
+  with facility); moved above the host section
+- Panel header height aligned with the main toolbar (`min-height: 40px`)
+- AppHeader: filter toggle button (funnel icon) placed to the right of the logo;
+  Settings link moved from standalone header icon into the account dropdown
+- Statistics nav item added as a placeholder (grayed out, "Coming soon" tooltip)
+- `api/client.js` — `request()` reads the response body as text first, then attempts
+  `JSON.parse`; connection-reset / non-JSON errors now produce readable messages
+- `internal/server/server.go` — SSL, restart, and disk routes registered centrally
+
+### Fixed
+
+- SSL generation returned `JSON.parse: unexpected character` when the cert directory
+  did not exist — caused by `defer file.Close()` keeping the handle open while the
+  HTTP response was written; replaced with explicit `Close()` before each return
+- Server failed to start (`open /etc/rsyslox/certs/cert.pem: no such file`) when
+  `use_ssl = true` and no certificate was present; resolved by `EnsureSSLCerts`
+  auto-generation on startup
+- Database tab showed a read-only info grid with a note to edit `config.toml` manually
+- Admin panel Vite build failure: `Element is missing end tag` at line 36 — unclosed
+  `<template v-else>` in the Server section
+- Stray `-->` comment fragment rendered as visible text throughout the admin panel
+
+---
+
 ## [v0.4.0] - 2026-02-23
 
 This release introduces the complete web frontend and the browser-based preferences
@@ -23,17 +101,14 @@ under the unreleased `v1.0.0` label are included here.
 **Log Viewer**
 - Filter panel: time range (relative quick-select or absolute date/time), severity,
   facility, host, tag, and free-text message search
-- Time range selector redesigned as a compact segmented control — no individual pill
-  borders, active segment filled with primary colour
+- Time range selector redesigned as a compact segmented control
 - Date fields pre-filled on first render using the default duration (`1h`)
 - Time shift buttons (`‹ Earlier` / `Later ›`) to step through log windows
 - Log table with severity colour coding, monospace data columns, multi-row selection
 - Detail panel: full message, all fields, expandable raw JSON, copy-to-clipboard
 - Export selected or all visible rows as CSV or JSON (client-side, no server round-trip)
 - Auto-refresh with countdown display; interval configurable from browser preferences
-- Dynamic page size — number of rows computed from available viewport height,
-  updates on window resize and font size change; rows stretch to fill the container
-  exactly with no whitespace gap below the last entry
+- Dynamic page size computed from viewport height; rows stretch to fill the container
 
 **Admin Panel**
 - Server settings editor (CORS origins, SSL toggle)
@@ -41,101 +116,60 @@ under the unreleased `v1.0.0` label are included here.
 - Log cleanup configuration (disk path, threshold %, batch size, check interval)
 - Read-only API key management: create named keys, list, revoke
 - One-time key reveal after creation with copy button (plaintext never stored or logged)
-- Preferences tab (default landing page) — see below
+- Preferences tab (default landing page)
 
 **Internationalisation (i18n)**
 - Translation files `src/i18n/en.json` and `src/i18n/de.json`; all UI strings externalised
-- `useLocale` composable — reactive `t(key, vars?)` with variable interpolation;
-  `fmtNumber()` for locale-aware thousands separators (`.` in German, `,` in English)
+- `useLocale` composable — reactive `t(key, vars?)` with variable interpolation
 - All views and components fully translated (log viewer, admin panel, filter panel)
-- Tab labels in Admin panel re-render immediately on language change
 
 **User Preferences (browser-persisted)**
-- `preferences.js` store — persists `language`, `timeFormat`, `fontSize`,
-  `autoRefreshInterval` in `localStorage`; applied immediately, no restart needed
-- Language: English / Deutsch
-- Time format: 24-hour or 12-hour clock applied to the timestamp column
-- Font size: Small (13 px) / Medium (14 px) / Large (15 px) — sets `font-size` on
-  `<html>`, all `rem` values scale proportionally including row height
-- Auto-refresh interval (seconds); replaces the former server-side setting
+- Language, time format (12h/24h), font size, auto-refresh interval
+- Applied immediately, no restart needed; stored in `localStorage`
 
 **Configuration (TOML)**
 - `/etc/rsyslox/config.toml` replaces `.env`
-- AES-GCM encrypted database password (key derived from machine-id)
-- bcrypt admin password (cost 12)
-- SHA-256 hashed read-only API keys
+- AES-GCM encrypted database password, bcrypt admin password (cost 12), SHA-256 API keys
 - First-run setup wizard (localhost-only until configured)
 
 **Install & Operations**
-- `scripts/install.sh` — guided installer: system user, binary, systemd unit, setup wizard
-- `--uninstall` flag for clean removal
-- Systemd hardening: `NoNewPrivileges`, `ProtectSystem=strict`, `PrivateTmp`
-- Offline API documentation via Redoc (embedded in binary at `/docs`)
+- `scripts/install.sh` — guided installer with systemd hardening
+- Offline API documentation via Redoc (embedded at `/docs`)
 
 **CI/CD**
-- GitHub Actions CI: frontend build → artifact → Go build + vet + test
-- GitHub Actions Release: multi-arch binaries (amd64/arm64), offline package, SHA-256 checksums
-- Pre-release auto-detection from tag name (e.g. `v0.5.0-beta`)
+- GitHub Actions CI and release pipeline; multi-arch binaries (amd64/arm64)
 
 ### Changed
 
 - Single binary embeds `frontend/dist/` and `docs/api-ui/` via `go:embed`
 - `database.Connect()` uses `cfg.DSN()` from TOML config instead of env vars
-- `go.mod`: added `BurntSushi/toml`, `golang.org/x/crypto`
-- `docker/entrypoint.sh` generates `config.toml` from env vars for test containers
-- Systemd unit updated: new install paths, security hardening directives
-- Settings gear icon in header replaces the "Admin" nav link; right-aligned with active state
 
 ### Fixed
 
-- **Flash animation on page change** — `watch(page, fetchLogs)` passed the page
-  number as the first positional argument to `fetchLogs`, making `fromRefresh` truthy;
-  every row on the new page flashed as "new". Fixed with an arrow wrapper:
-  `watch(page, () => fetchLogs())`
-- **Impossible entry count display** (e.g. `3,660 von 2,919`) — a lazy `dbTotal`
-  background fetch used no time filter and returned a different total than the active
-  view; removed entirely, only the filtered count is shown
-- **App.vue broken theme injection** — `import { provide }` appeared after `const`
-  declarations; moved to the top import line, fixing the white screen on `/logs` and
-  the broken dark/light toggle
-- **FilterPanel late imports** — `import { computed }` and `import { useLocale }`
-  placed after `const SEV_COLORS`; moved to top of `<script setup>`
-- **AdminView stray `<`** — a lone `<` left in the template after removing a field
-  caused the Vue template compiler to fail
-- **LogsView missing `watch` import** — `watch` was used but absent from the Vue
-  named imports
+- Flash animation on page change
+- Impossible entry count display (e.g. `3,660 von 2,919`)
+- Broken theme injection in `App.vue`
+- Late imports in `FilterPanel.vue` and `LogsView.vue`
 
 ### Removed
 
 - `.env` / `.env.example` — replaced by TOML config
 - `API_KEY` env var — replaced by named, revocable read-only API keys
-- `dbTotal` ref and its background API call from `logs.js`
-- `autoRefresh` and `autoRefreshInterval` props from `AppHeader` (unused in template)
-- `@toggle-refresh` event binding on `<AppHeader>` in `AdminView`
-- `SEVERITY_LABELS` import in `LogTable` (imported but never referenced)
-- `tableScrollRef` ref in `LogTable` (declared, never read)
-- Duplicate `position: sticky` on `thead th` (superseded by `thead tr`)
-- Redundant `.pill-row.wrap` CSS rule (identical to `.pill-row`)
-- `api.getConfig()` call in `LogsView.onMounted` — race condition with
-  `watch(prefAutoRefresh, { immediate: true })`; preferences store is now sole source
 
 ---
 
 ## [v0.3.0] - 2025-02-19
 
 ### Added
-- **`Severity` field** in all `/logs` responses — RFC-5424 compliant (0–7)
-- **`Severity_Label` field** in all `/logs` responses
-- **`Priority` field** now contains true RFC PRI value (`Facility × 8 + Severity`)
-- **Automatic rsyslog version detection** at startup
-- **Per-row format detection** for mixed datasets
-- **`?Severity=` filter parameter** — `?Priority=` kept as deprecated alias
-- **`/meta/Severity` virtual column** — computed via `Priority MOD 8`
-- **Cleanup service** — disk-based log retention
+- `Severity` and `Severity_Label` fields in all `/logs` responses (RFC-5424)
+- `Priority` field now contains true RFC PRI value (`Facility × 8 + Severity`)
+- Automatic rsyslog version detection at startup
+- `?Severity=` filter parameter (`?Priority=` kept as deprecated alias)
+- `/meta/Severity` virtual column
+- Cleanup service — disk-based log retention
 
 ### Changed
 - `Priority_Label` removed from responses
-- `?Priority=` is a deprecated alias for `?Severity=`
 - `/meta/{column}` no longer applies a default time filter
 
 ---
@@ -145,7 +179,6 @@ under the unreleased `v1.0.0` label are included here.
 ### Added
 - Structured error responses (`code`, `message`, `details`, `field`)
 - Enhanced multi-value filter performance
-- Improved meta endpoint filtering
 
 ---
 
