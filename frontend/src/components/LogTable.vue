@@ -3,6 +3,20 @@
     <!-- Toolbar -->
     <div class="toolbar">
       <div class="toolbar-left">
+
+        <!-- Filter open button — visible only when sidebar is collapsed -->
+        <button
+          v-if="sidebarCollapsed"
+          class="filter-open-btn"
+          @click="$emit('toggle-sidebar')"
+          :title="t('filter.open')"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+          </svg>
+          {{ t('filter.open') }}
+        </button>
+
         <span v-if="selectedCount > 0" class="selection-info">
           {{ selectedCount }} {{ t('table.selected') }}
           <button class="toolbar-btn danger" @click="$emit('clear-selection')">{{ t('table.clear') }}</button>
@@ -21,7 +35,6 @@
           </template>
           <span v-else class="loading-pulse">{{ t('table.loading') }}</span>
         </span>
-
       </div>
 
       <div class="toolbar-right">
@@ -117,7 +130,7 @@
       </table>
     </div>
 
-    <!-- Pagination — hidden in show-all mode -->
+    <!-- Pagination -->
     <div v-if="!showAll" class="pagination">
       <button class="pag-btn" :disabled="page <= 1" @click="$emit('set-page', 1)">«</button>
       <button class="pag-btn" :disabled="page <= 1" @click="$emit('set-page', page - 1)">‹</button>
@@ -158,6 +171,7 @@ defineEmits([
   'export-csv', 'export-json',
   'set-page',
   'toggle-show-all',
+  'toggle-sidebar',
 ])
 
 const { t, fmtNumber } = useLocale()
@@ -169,38 +183,31 @@ function severityVal(entry) {
   if (typeof entry.Priority === 'number') return entry.Priority % 8
   return 6
 }
-
 function severityLabel(entry) {
   const short = { 0:'EMERG',1:'ALERT',2:'CRIT',3:'ERR',4:'WARN',5:'NOTICE',6:'INFO',7:'DEBUG' }
   return short[severityVal(entry)] ?? String(severityVal(entry))
 }
-
 function trimTag(tag) {
   if (!tag) return ''
   return tag.replace(/[:\[]+\d*\]?$/, '').trim()
 }
-
 function highlightMessage(text) {
   if (!props.messageSearch || !text) return escapeHtml(text ?? '')
-  const escaped  = escapeHtml(text)
-  const term     = escapeHtml(props.messageSearch)
-  const re       = new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
+  const escaped = escapeHtml(text)
+  const term    = escapeHtml(props.messageSearch)
+  const re      = new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
   return escaped.replace(re, m => `<mark class="msg-hl">${m}</mark>`)
 }
-
 function escapeHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
 }
-
 function formatTime(ts) {
   const d = new Date(ts)
   if (isNaN(d)) return ts
   const pad = n => String(n).padStart(2, '0')
   const date = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`
   if (timeFormat.value === '12h') {
-    const h = d.getHours()
-    const ampm = h >= 12 ? 'PM' : 'AM'
-    const h12  = h % 12 || 12
+    const h = d.getHours(); const ampm = h >= 12 ? 'PM' : 'AM'; const h12 = h % 12 || 12
     return `${date} ${pad(h12)}:${pad(d.getMinutes())}:${pad(d.getSeconds())} ${ampm}`
   }
   return `${date} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
@@ -209,26 +216,33 @@ function formatTime(ts) {
 
 <style scoped>
 .log-table-wrap {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  overflow: hidden;
-  min-height: 0;
+  display: flex; flex-direction: column;
+  flex: 1; overflow: hidden; min-height: 0;
 }
 
-/* ── Toolbar ─────────────────────────────────── */
+/* ── Toolbar ──────────────────────────────────────── */
 .toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: flex; align-items: center; justify-content: space-between;
   padding: .4rem .75rem;
   border-bottom: 1px solid var(--border);
   background: var(--bg-surface);
-  flex-shrink: 0;
-  gap: .5rem;
-  min-height: 40px;
+  flex-shrink: 0; gap: .5rem; min-height: 40px;
 }
 .toolbar-left, .toolbar-right { display: flex; align-items: center; gap: .5rem; }
+
+/* Filter open button */
+.filter-open-btn {
+  display: inline-flex; align-items: center; gap: .35rem;
+  padding: .28rem .6rem; font-size: .8rem;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius); cursor: pointer; color: var(--text-muted);
+  transition: color .15s, background .15s, border-color .15s;
+  white-space: nowrap; flex-shrink: 0;
+}
+.filter-open-btn:hover {
+  background: var(--bg-hover); color: var(--text);
+  border-color: var(--color-primary);
+}
 
 .total-info     { font-size: .8rem; color: var(--text-muted); display: flex; align-items: center; gap: .35rem; }
 .of-label       { color: var(--text-muted); }
@@ -244,28 +258,18 @@ function formatTime(ts) {
 .toolbar-btn.danger:hover { background: #fef2f2; }
 [data-theme="dark"] .toolbar-btn.danger:hover { background: #2d1212; }
 
-/* Live badge */
 .live-badge {
   display: inline-flex; align-items: center; gap: .3rem;
-  font-size: .75rem; font-weight: 600;
-  color: var(--color-primary);
-  padding: .15rem .45rem;
-  border: 1px solid var(--color-primary);
-  border-radius: var(--radius);
-  background: var(--bg-selected);
-  user-select: none;
+  font-size: .75rem; font-weight: 600; color: var(--color-primary);
+  padding: .15rem .45rem; border: 1px solid var(--color-primary);
+  border-radius: var(--radius); background: var(--bg-selected); user-select: none;
 }
 .live-badge-dot {
-  width: 6px; height: 6px; border-radius: 50%;
-  background: var(--color-primary);
+  width: 6px; height: 6px; border-radius: 50%; background: var(--color-primary);
   animation: live-pulse 1.5s ease-in-out infinite;
 }
-@keyframes live-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50%       { opacity: .45; transform: scale(.7); }
-}
+@keyframes live-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .45; transform: scale(.7); } }
 
-/* Unified control buttons */
 .ctrl-btn {
   display: inline-flex; align-items: center; gap: .35rem;
   padding: .28rem .6rem; font-size: .8rem;
@@ -275,43 +279,24 @@ function formatTime(ts) {
   font-variant-numeric: tabular-nums; white-space: nowrap;
 }
 .ctrl-btn:hover { background: var(--bg-hover); color: var(--text); }
-.ctrl-btn.active {
-  color: var(--color-primary);
-  border-color: var(--color-primary);
-  background: var(--bg-selected);
-}
-.ctrl-btn svg { flex-shrink: 0; }
+.ctrl-btn.active { color: var(--color-primary); border-color: var(--color-primary); background: var(--bg-selected); }
 
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
 .loading-pulse { animation: pulse 1.5s infinite; font-size: .8rem; }
 
-/* ── Table scroll ─────────────────────────────── */
+/* ── Table ────────────────────────────────────────── */
 .table-scroll { flex: 1; overflow-y: auto; overflow-x: auto; min-height: 0; background: var(--bg); }
-
-/* ── Table ───────────────────────────────────── */
 .log-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: .8rem;
-  table-layout: fixed;
-  background: var(--bg);
+  width: 100%; border-collapse: collapse;
+  font-size: .8rem; table-layout: fixed; background: var(--bg);
 }
-.log-table thead tr {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-}
+.log-table thead tr { position: sticky; top: 0; z-index: 2; }
 .log-table th {
-  padding: .45rem .625rem;
-  text-align: left;
-  font-size: .68rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .05em;
-  color: var(--text-muted);
-  background: var(--bg-surface);
-  border-bottom: 2px solid var(--border);
-  white-space: nowrap;
+  padding: .45rem 0; text-align: left;
+  font-size: .68rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .05em;
+  color: var(--text-muted); background: var(--bg-surface);
+  border-bottom: 2px solid var(--border); white-space: nowrap;
 }
 
 .col-check { width: 36px; text-align: center; }
@@ -323,13 +308,10 @@ function formatTime(ts) {
 .col-msg   { /* fill remaining */ }
 
 .log-row {
-  border-bottom: 1px solid var(--border);
-  background: var(--bg);
-  cursor: pointer;
-  transition: background .1s;
-  height: var(--row-h, 31px);  /* fills container exactly — set by JS from available space */
+  border-bottom: 1px solid var(--border); background: var(--bg);
+  cursor: pointer; transition: background .1s;
+  height: var(--row-h, 31px);
 }
-
 @keyframes row-flash {
   0%   { background: color-mix(in srgb, var(--color-primary) 22%, transparent); }
   100% { background: transparent; }
@@ -349,44 +331,29 @@ function formatTime(ts) {
 .log-row.sev-row-7 { border-left: 3px solid transparent; }
 
 .log-table td {
-  padding: .38rem .625rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: middle;
-  color: var(--text);
+  padding: 0; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+  vertical-align: middle; color: var(--text);
 }
 .mono { font-family: ui-monospace,'Cascadia Code','SF Mono',Menlo,monospace; font-size: .77rem; }
 
 .sev-badge {
-  display: inline-block;
-  padding: .1rem .3rem;
-  border-radius: 3px;
-  font-size: .68rem;
-  font-weight: 700;
-  letter-spacing: .02em;
-  color: #fff;
+  display: inline-block; padding: .1rem .3rem; border-radius: 3px;
+  font-size: .68rem; font-weight: 700; letter-spacing: .02em; color: #fff;
 }
-.sev-0 { background: var(--sev-0); }
-.sev-1 { background: var(--sev-1); }
-.sev-2 { background: var(--sev-2); }
-.sev-3 { background: var(--sev-3); }
-.sev-4 { background: var(--sev-4); }
-.sev-5 { background: var(--sev-5); }
-.sev-6 { background: var(--sev-6); }
-.sev-7 { background: var(--sev-7); color: var(--text); }
+.sev-0 { background: var(--sev-0); } .sev-1 { background: var(--sev-1); }
+.sev-2 { background: var(--sev-2); } .sev-3 { background: var(--sev-3); }
+.sev-4 { background: var(--sev-4); } .sev-5 { background: var(--sev-5); }
+.sev-6 { background: var(--sev-6); } .sev-7 { background: var(--sev-7); color: var(--text); }
 
 .empty-state { text-align: center; padding: 3rem; color: var(--text-muted); font-size: .875rem; }
 
 .skeleton-row td { padding: .5rem .625rem; }
-.skel {
-  display: inline-block; height: .72rem; border-radius: 3px;
-  background: var(--border); animation: pulse 1.5s ease-in-out infinite;
-}
+.skel { display: inline-block; height: .72rem; border-radius: 3px; background: var(--border); animation: pulse 1.5s ease-in-out infinite; }
 .skel-time { width: 128px; } .skel-sev { width: 44px; } .skel-fac { width: 60px; }
 .skel-host { width: 80px; }  .skel-tag { width: 64px; } .skel-msg { width: 60%; }
 
-/* ── Pagination ──────────────────────────────── */
+/* ── Pagination ───────────────────────────────────── */
 .pagination {
   display: flex; align-items: center; justify-content: center;
   gap: .375rem; padding: .5rem;
@@ -395,7 +362,8 @@ function formatTime(ts) {
 .pag-btn {
   background: var(--bg); border: 1px solid var(--border);
   border-radius: var(--radius); cursor: pointer;
-  padding: .28rem .6rem; font-size: .875rem; color: var(--text); transition: all .15s; min-width: 34px;
+  padding: .28rem .6rem; font-size: .875rem; color: var(--text);
+  transition: all .15s; min-width: 34px;
 }
 .pag-btn:hover:not(:disabled) { background: var(--bg-hover); border-color: var(--color-primary); }
 .pag-btn:disabled { opacity: .35; cursor: default; }
@@ -403,15 +371,6 @@ function formatTime(ts) {
 </style>
 
 <style>
-/* Global — needed because v-html content is not subject to scoped styles */
-.msg-hl {
-  background: #fef08a;
-  color: #713f12;
-  border-radius: 2px;
-  padding: 0 .1rem;
-}
-[data-theme="dark"] .msg-hl {
-  background: #854d0e;
-  color: #fef9c3;
-}
+.msg-hl { background: #fef08a; color: #713f12; border-radius: 2px; padding: 0 .1rem; }
+[data-theme="dark"] .msg-hl { background: #854d0e; color: #fef9c3; }
 </style>

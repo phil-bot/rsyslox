@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/phil-bot/rsyslox/internal/auth"
+	"github.com/phil-bot/rsyslox/internal/cleanup"
 	"github.com/phil-bot/rsyslox/internal/config"
 	"github.com/phil-bot/rsyslox/internal/database"
 	"github.com/phil-bot/rsyslox/internal/handlers"
@@ -39,11 +40,13 @@ type Server struct {
 	setupMode    bool
 	authMgr      *auth.Manager
 	sessionStore *auth.SessionStore
+	cleaner      *cleanup.Cleaner // may be nil in setup mode
 }
 
 // New creates a new Server instance.
 // setupMode=true means no config file was found; only the setup wizard is enabled.
-func New(cfg *config.Config, db *database.DB, version string, setupMode bool) *Server {
+// cleaner may be nil in setup mode.
+func New(cfg *config.Config, db *database.DB, version string, setupMode bool, cleaner *cleanup.Cleaner) *Server {
 	return &Server{
 		cfg:          cfg,
 		db:           db,
@@ -52,6 +55,7 @@ func New(cfg *config.Config, db *database.DB, version string, setupMode bool) *S
 		setupMode:    setupMode,
 		authMgr:      auth.New(cfg),
 		sessionStore: auth.NewSessionStore(),
+		cleaner:      cleaner,
 	}
 }
 
@@ -75,18 +79,16 @@ func (s *Server) SetupRoutes() {
 	s.router.Handle("/docs", http.RedirectHandler("/docs/", http.StatusMovedPermanently))
 	s.router.Handle("/docs/", cors(logging(docsHandler)))
 
-	// --- Health (public) ---
-	healthHandler := handlers.NewHealthHandler(s.db, s.version)
+	// --- Health (public) — passes cfg for server defaults ---
+	healthHandler := handlers.NewHealthHandler(s.db, s.version, s.cfg)
 	s.router.Handle("/health", cors(logging(healthHandler)))
 
 	// --- Setup wizard ---
 	// In setup mode (no config.toml yet): accessible from any host so headless
 	// servers and Docker containers can be configured via browser.
-	// In normal mode: wrapped in LocalhostOnly as a safety net (the handler
-	// itself also rejects requests when a config already exists).
+	// In normal mode: wrapped in LocalhostOnly as a safety net.
 	setupHandler := setup.New(s.cfg, s.sessionStore)
 	if s.setupMode {
-		// No localhost restriction — wizard must be reachable remotely
 		s.router.Handle("/api/setup", cors(logging(setupHandler)))
 		log.Println("⚠️  Running in setup mode — open the web UI to complete setup")
 		return
@@ -100,7 +102,7 @@ func (s *Server) SetupRoutes() {
 	s.router.Handle("/api/admin/logout", cors(logging(authAdmin(logoutHandler))))
 
 	// --- Admin: config and key management (admin token required) ---
-	configHandler  := admin.NewConfigHandler(s.cfg)
+	configHandler  := admin.NewConfigHandler(s.cfg, s.cleaner)
 	keysHandler    := admin.NewKeysHandler(s.cfg)
 	sslHandler     := admin.NewSSLHandler(s.cfg)
 	restartHandler := admin.NewRestartHandler()
@@ -145,11 +147,9 @@ func (s *Server) Start() error {
 }
 
 // frontendHandler serves the embedded Vue app.
-// In setup mode it serves the same SPA — the Vue router shows the wizard.
 func (s *Server) frontendHandler() http.Handler {
 	sub, err := fs.Sub(FrontendFS, "frontend/dist")
 	if err != nil {
-		// No embedded frontend (dev mode without npm build) — serve placeholder
 		log.Println("⚠️  No embedded frontend found. Run 'make frontend' first.")
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/html")
@@ -165,12 +165,9 @@ func (s *Server) frontendHandler() http.Handler {
 	fileServer := http.FileServer(http.FS(sub))
 
 	// Read index.html once for the SPA fallback.
-	// We serve it directly (not via FileServer) because Go's FileServer
-	// redirects /index.html → / which creates an infinite redirect loop.
 	indexHTML, indexErr := fs.ReadFile(sub, "index.html")
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Strip leading slash — fs.FS paths must not start with /
 		fsPath := strings.TrimPrefix(r.URL.Path, "/")
 		if fsPath == "" {
 			fsPath = "index.html"

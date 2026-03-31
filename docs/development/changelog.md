@@ -6,6 +6,86 @@ All notable changes to rsyslox.
 
 ---
 
+## [v0.5.0] - 2026-03-31
+
+This release overhauls the user interface and preference system. A new About
+dialog shows version information, the navigation bar is redesigned without
+a dropdown, and the filter panel gains collapsible sections. Server-side
+defaults for all user preferences are now configurable. Three bugs are fixed:
+the live-mode duration highlight, the cleanup threshold mismatch, and cleanup
+configuration changes now take effect without a server restart.
+
+### Added
+
+**About dialog**
+- New "About rsyslox" modal accessible from the navigation bar: shows version,
+  license, author, source and documentation links
+
+**Server-side preference defaults**
+- `config.toml` now supports `default_language`, `default_font_size` and
+  `default_time_format` under `[server]`, alongside the existing
+  `default_time_range` and `auto_refresh_interval`
+- `/health` response includes all five defaults in a `defaults` object
+- The frontend applies server defaults to any preference key that has not yet
+  been explicitly set by the user in `localStorage` — existing user settings
+  are never overwritten
+- All five defaults are editable in **Admin → Server → Default Values**
+
+**Navigation bar**
+- Redesigned as a flat icon bar — no dropdown menu
+- Theme toggle replaced with an inline slide switch (sun / moon icons)
+- Docs link has an external-tab indicator (↗ arrow badge)
+- Logout, Settings, About, Docs are direct icon buttons; Settings and Docs
+  are only shown to admin users
+
+**Filter panel**
+- Each filter section (Time Range, Severity, Facility, Tag, Host, Message
+  Search) is individually collapsible via its header; collapsed state
+  persists in `localStorage` (`rsyslox_filter_collapsed`)
+- "Close filters" button inside the panel header (replaces the header toggle)
+- When the sidebar is collapsed, a "Filters" button appears in the log table
+  toolbar to re-open it
+
+**Admin panel**
+- Single **Save** button per tab, shown in a bottom bar (Server tab, Database
+  tab); no intermediate save buttons inside form sections
+- Database settings and Cleanup settings are saved together with one request
+- Preferences tab: auto-saves on every change; no Save button
+- API Keys tab: no Save button (create / revoke are immediate actions)
+
+**Font sizes**
+- Increased to 14 / 16 / 18 px (was 13 / 14 / 15 px)
+
+**Default time range**
+- Changed from `1h` to `24h` for new sessions without a stored preference
+
+### Changed
+
+- `server.New()` accepts a `*cleanup.Cleaner` parameter so cleanup config
+  changes propagate at runtime
+- `handlers.NewHealthHandler()` accepts `*config.Config` to supply defaults
+- `admin.NewConfigHandler()` accepts `*cleanup.Cleaner`
+
+### Fixed
+
+- **Live-mode duration highlight** — the active duration button in the filter
+  panel lost its highlight after a short time in live mode because `activeDur`
+  compared the rolling `endDate` against the fixed `startDate`. Fix: return
+  `relativeDur` directly when `autoRefresh` is true
+- **Cleanup threshold mismatch** — `diskUsagePercent` used `stat.Bfree`
+  (includes root-reserved blocks) while the disk widget used `stat.Bavail`.
+  Both now use `stat.Bavail` for a consistent reading
+- **Cleanup changes required restart** — the `Cleaner` goroutine held a copy
+  of the initial config. A new `UpdateConfig(cfg Config)` method updates the
+  running goroutine via a mutex + signal channel; changes from the Admin panel
+  take effect immediately
+- **Login flash on first load** — navigating to `/` briefly rendered the log
+  view before redirecting to `/login`. Fix: the `/` route redirect now checks
+  `auth.isAuthenticated` synchronously and goes directly to `/login` or
+  `/logs` without an intermediate navigation
+
+---
+
 ## [v0.4.3] - 2026-03-02
 
 This release overhauls the Admin panel with fully editable server and database

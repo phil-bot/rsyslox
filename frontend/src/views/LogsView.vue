@@ -1,6 +1,6 @@
 <template>
   <div class="logs-layout">
-    <AppHeader @toggle-sidebar="sidebarOpen = !sidebarOpen" />
+    <AppHeader />
 
     <div class="logs-body">
       <FilterPanel
@@ -41,6 +41,7 @@
         @toggle-live="toggleAutoRefresh"
         @exit-live="stopAutoRefresh"
         @reset="resetFilters"
+        @close="sidebarOpen = false"
       />
 
       <div v-if="sidebarOpen && isMobile" class="sidebar-backdrop" @click="sidebarOpen = false" />
@@ -77,6 +78,7 @@
           @export-json="exportJSON(selectedLogs.length ? selectedLogs : logs)"
           @set-page="setPage"
           @toggle-show-all="showAll = !showAll; fetchLogs()"
+          @toggle-sidebar="sidebarOpen = !sidebarOpen"
         />
       </div>
 
@@ -117,50 +119,25 @@ const sidebarOpen = ref(true)
 const isMobile    = ref(window.innerWidth < 768)
 const logsMainRef = ref(null)
 
-// ── Dynamic page size ────────────────────────────────────────────────────────
-// Computed in LogsView (owns the container), not in LogTable (avoids circular
-// dependency: watch(logs)→emit pageSize→setPageSize→fetchLogs→watch(logs)).
-//
 let ro = null
 
 function computePageSize() {
   const wrap = logsMainRef.value
   if (!wrap) return
-
-  // Measure chrome elements from the real DOM — accurate regardless of theme or zoom.
   const toolbar    = wrap.querySelector('.toolbar')
   const thead      = wrap.querySelector('thead')
   const pagination = wrap.querySelector('.pagination')
   const chromeH = (toolbar    ? toolbar.offsetHeight    : 40)
                + (thead       ? thead.offsetHeight      : 28)
                + (pagination  ? pagination.offsetHeight : 36)
-
   const available = wrap.clientHeight - chromeH
   if (available <= 0) return
-
-  // Estimate natural row height from the current base font size.
-  // td has .38rem top + .38rem bottom padding; text is .8rem at 1.5 line-height.
-  const basePx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 14
-
-  //  const naturalRowH = Math.ceil(basePx * (0.76 + 0.8 * 1.5))
-  // set naturalRowH to fixed value
   const naturalRowH = 31
-
-  // Number of rows that fit — subtract 1 so the last row is never clipped by pagination.
   const n = Math.max(5, Math.floor(available / naturalRowH))
-
-  // Exact row height so n rows fill the container with zero leftover space.
-  //const exactRowH = Math.floor((available / n)).toFixed(2)
   const exactRowH = ((available / n)).toFixed(2)
-
-  // Push --row-h into the table-scroll element; LogTable uses it for td min-height.
   const tableScroll = wrap.querySelector('.table-scroll')
   if (tableScroll) tableScroll.style.setProperty('--row-h', `${exactRowH}px`)
-
-  if (n !== pageSize.value) {
-    setPageSize(n)
-    fetchLogs()
-  }
+  if (n !== pageSize.value) { setPageSize(n); fetchLogs() }
 }
 
 function onResize() {
@@ -168,19 +145,12 @@ function onResize() {
   if (!isMobile.value) sidebarOpen.value = true
 }
 
-// Sync auto-refresh interval from preferences into the logs store
-watch(prefAutoRefresh, (val) => {
-  startAutoRefresh(val)
-}, { immediate: true })
-
-// Recompute row count when font size changes (naturalRowH depends on base font size)
+watch(prefAutoRefresh, (val) => { startAutoRefresh(val) }, { immediate: true })
 watch(prefFontSize, () => { nextTick(computePageSize) })
 
 onMounted(() => {
   window.addEventListener('resize', onResize)
   if (isMobile.value) sidebarOpen.value = false
-
-  // Observe .logs-main height changes (sidebar open/close, window resize)
   nextTick(() => {
     if (logsMainRef.value) {
       ro = new ResizeObserver(computePageSize)
@@ -188,7 +158,6 @@ onMounted(() => {
       computePageSize()
     }
   })
-
   fetchLogs()
   fetchFilterOptions()
 })
@@ -226,16 +195,9 @@ function shiftTimeWindow(direction) {
 </script>
 
 <style scoped>
-.logs-layout {
-  display: flex; flex-direction: column;
-  height: 100%; overflow: hidden;
-}
-.logs-body {
-  display: flex; flex: 1; overflow: hidden; position: relative;
-}
-.logs-main {
-  flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0;
-}
+.logs-layout { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+.logs-body   { display: flex; flex: 1; overflow: hidden; position: relative; }
+.logs-main   { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
 .error-banner {
   background: #fef2f2; color: #dc2626;
   border-bottom: 1px solid #fca5a5;
@@ -248,11 +210,6 @@ function shiftTimeWindow(direction) {
   border-radius: var(--radius); cursor: pointer;
   padding: .2rem .5rem; font-size: .8rem; color: inherit;
 }
-.sidebar-backdrop {
-  position: fixed; inset: 0;
-  background: rgba(0,0,0,.3); z-index: 40;
-}
-.is-paginated :deep(.table-scroll) {
-  overflow: hidden !important;
-}
+.sidebar-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.3); z-index: 40; }
+.is-paginated :deep(.table-scroll) { overflow: hidden !important; }
 </style>

@@ -11,27 +11,37 @@ import (
 	"github.com/phil-bot/rsyslox/internal/database"
 )
 
+// ServerDefaults contains all server-configured default values sent to the
+// frontend on every /health response. The frontend applies these to new
+// browser sessions that have not yet stored their own preferences.
+type ServerDefaults struct {
+	TimeRange           string `json:"time_range"`
+	AutoRefreshInterval int    `json:"auto_refresh_interval"`
+	Language            string `json:"language"`
+	FontSize            string `json:"font_size"`
+	TimeFormat          string `json:"time_format"`
+}
+
 // HealthResponse is the JSON body returned by GET /health.
-// SetupMode=true signals that no config.toml exists yet — the frontend
-// should redirect to the setup wizard.
 type HealthResponse struct {
-	Status    string `json:"status"`
-	Database  string `json:"database,omitempty"`
-	Version   string `json:"version"`
-	Timestamp string `json:"timestamp"`
-	SetupMode bool   `json:"setup_mode,omitempty"`
+	Status    string          `json:"status"`
+	Database  string          `json:"database,omitempty"`
+	Version   string          `json:"version"`
+	Timestamp string          `json:"timestamp"`
+	SetupMode bool            `json:"setup_mode,omitempty"`
+	Defaults  *ServerDefaults `json:"defaults,omitempty"`
 }
 
 // HealthHandler handles GET /health.
 type HealthHandler struct {
-	db      *database.DB // nil while in setup mode
+	db      *database.DB
 	version string
+	cfg     *config.Config
 }
 
 // NewHealthHandler creates a HealthHandler.
-// db may be nil when the server starts without a config (setup mode).
-func NewHealthHandler(db *database.DB, version string) *HealthHandler {
-	return &HealthHandler{db: db, version: version}
+func NewHealthHandler(db *database.DB, version string, cfg *config.Config) *HealthHandler {
+	return &HealthHandler{db: db, version: version, cfg: cfg}
 }
 
 func (h *HealthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -42,10 +52,6 @@ func (h *HealthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 
-	// Check config file existence on every request.
-	// This allows the frontend to detect when setup has completed without
-	// a server restart: once config.toml is written the next /health call
-	// returns setup_mode=false and the router navigates to /login.
 	cfgPath := config.ActiveConfigPath()
 	if _, err := os.Stat(cfgPath); os.IsNotExist(err) {
 		w.WriteHeader(http.StatusOK)
@@ -60,9 +66,6 @@ func (h *HealthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Config exists — normal operation.
-	// db may still be nil if the server hasn't restarted yet after setup;
-	// report as "pending" so the frontend can show a useful message.
 	if h.db == nil {
 		w.WriteHeader(http.StatusOK)
 		if encErr := json.NewEncoder(w).Encode(HealthResponse{
@@ -88,12 +91,24 @@ func (h *HealthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var defaults *ServerDefaults
+	if h.cfg != nil {
+		defaults = &ServerDefaults{
+			TimeRange:           h.cfg.Server.DefaultTimeRange,
+			AutoRefreshInterval: h.cfg.Server.AutoRefreshInterval,
+			Language:            h.cfg.Server.DefaultLanguage,
+			FontSize:            h.cfg.Server.DefaultFontSize,
+			TimeFormat:          h.cfg.Server.DefaultTimeFormat,
+		}
+	}
+
 	w.WriteHeader(http.StatusOK)
 	if encErr := json.NewEncoder(w).Encode(HealthResponse{
 		Status:    "healthy",
 		Database:  "connected",
 		Version:   h.version,
 		Timestamp: time.Now().Format(time.RFC3339),
+		Defaults:  defaults,
 	}); encErr != nil {
 		log.Printf("health: encode error: %v", encErr)
 	}

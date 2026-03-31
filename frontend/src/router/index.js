@@ -1,71 +1,105 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { appState } from '@/stores/appState'
+import { applyServerDefaults } from '@/stores/preferences'
 
 const router = createRouter({
   history: createWebHistory(),
-  routes: [
-    { path: '/', redirect: '/logs' },
+  routes: [{
+      path: '/',
+      name: 'home',
+      meta: {
+        public: true
+      },
+    },
     {
       path: '/setup',
       name: 'setup',
       component: () => import('@/views/SetupView.vue'),
-      meta: { public: true },
+      meta: {
+        public: true
+      },
     },
     {
       path: '/login',
       name: 'login',
       component: () => import('@/views/LoginView.vue'),
-      meta: { public: true },
+      meta: {
+        public: true
+      },
     },
     {
       path: '/logs',
       name: 'logs',
       component: () => import('@/views/LogsView.vue'),
-      meta: { requiresAuth: true },
+      meta: {
+        requiresAuth: true
+      },
     },
     {
       path: '/admin',
       name: 'admin',
       component: () => import('@/views/AdminView.vue'),
-      meta: { requiresAdmin: true },
+      meta: {
+        requiresAdmin: true
+      },
     },
-    { path: '/:pathMatch(.*)*', redirect: '/logs' },
+    {
+      path: '/:pathMatch(.*)*',
+      redirect: () => {
+        const auth = useAuthStore()
+        return auth.isAuthenticated.value ? '/logs' : '/login'
+      },
+    },
   ],
 })
 
-// Fetches /health and returns whether the server is in setup mode.
-// Result is NOT cached — the health endpoint is cheap and we need
-// the live value after the setup wizard writes config.toml.
-async function isSetupMode() {
+async function fetchHealthAndApplyDefaults() {
   try {
     const res = await fetch('/health')
     const data = await res.json()
-    return data.setup_mode === true
+    if (data.version)  appState.version  = data.version
+      if (data.defaults) {
+        appState.defaults = data.defaults
+        applyServerDefaults(data.defaults)
+      }
+      return data
   } catch {
-    return false
+    return {}
   }
 }
 
 router.beforeEach(async (to) => {
-  const setupMode = await isSetupMode()
+  const data = await fetchHealthAndApplyDefaults()
+  const auth = useAuthStore()
 
-  if (setupMode) {
+  // Setup-Modus aktiv → nur /setup erlaubt
+  if (data.setup_mode === true) {
     if (to.name !== 'setup') return { name: 'setup' }
     return true
   }
 
-  // Normal operation
+  // Setup-Modus inaktiv → /setup sperren
+  if (to.name === 'setup') {
+    return auth.isAuthenticated.value ? { name: 'logs' } : { name: 'login' }
+  }
+
+  // "/" → direkt weiterleiten
+  if (to.name === 'home') {
+    return auth.isAuthenticated.value ? { name: 'logs' } : { name: 'login' }
+  }
+
   if (to.meta.public) return true
 
-  const auth = useAuthStore()
-  if (!auth.isAuthenticated) {
-    return { name: 'login', query: { redirect: to.fullPath } }
-  }
-  if (to.meta.requiresAdmin && !auth.isAdmin) {
-    return { name: 'logs' }
-  }
+    if (!auth.isAuthenticated.value) {
+      return { name: 'login' }
+    }
 
-  return true
+    if (to.meta.requiresAdmin && !auth.isAdmin.value) {
+      return { name: 'logs' }
+    }
+
+    return true
 })
 
 export default router

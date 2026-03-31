@@ -6,12 +6,12 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/phil-bot/rsyslox/internal/cleanup"
 	"github.com/phil-bot/rsyslox/internal/config"
 	"github.com/phil-bot/rsyslox/internal/models"
 )
 
 // ConfigView is the safe, sanitized view of the config returned to the frontend.
-// Sensitive values (passwords, hashes) are never included.
 type ConfigView struct {
 	Server   ServerView   `json:"server"`
 	Database DatabaseView `json:"database"`
@@ -26,6 +26,10 @@ type ServerView struct {
 	SSLKeyFile          string   `json:"ssl_key"`
 	AllowedOrigins      []string `json:"allowed_origins"`
 	AutoRefreshInterval int      `json:"auto_refresh_interval"`
+	DefaultTimeRange    string   `json:"default_time_range"`
+	DefaultLanguage     string   `json:"default_language"`
+	DefaultFontSize     string   `json:"default_font_size"`
+	DefaultTimeFormat   string   `json:"default_time_format"`
 }
 
 type DatabaseView struct {
@@ -55,6 +59,10 @@ type ServerUpdateRequest struct {
 	AllowedOrigins      []string `json:"allowed_origins,omitempty"`
 	AutoRefreshInterval *int     `json:"auto_refresh_interval,omitempty"`
 	UseSSL              *bool    `json:"use_ssl,omitempty"`
+	DefaultTimeRange    string   `json:"default_time_range,omitempty"`
+	DefaultLanguage     string   `json:"default_language,omitempty"`
+	DefaultFontSize     string   `json:"default_font_size,omitempty"`
+	DefaultTimeFormat   string   `json:"default_time_format,omitempty"`
 }
 
 type DatabaseUpdateRequest struct {
@@ -62,7 +70,7 @@ type DatabaseUpdateRequest struct {
 	Port     *int   `json:"port,omitempty"`
 	Name     string `json:"name,omitempty"`
 	User     string `json:"user,omitempty"`
-	Password string `json:"password,omitempty"` // plaintext; encrypted before saving
+	Password string `json:"password,omitempty"`
 }
 
 type CleanupUpdateRequest struct {
@@ -75,11 +83,12 @@ type CleanupUpdateRequest struct {
 
 // ConfigHandler handles GET and PATCH /api/admin/config.
 type ConfigHandler struct {
-	cfg *config.Config
+	cfg     *config.Config
+	cleaner *cleanup.Cleaner
 }
 
-func NewConfigHandler(cfg *config.Config) *ConfigHandler {
-	return &ConfigHandler{cfg: cfg}
+func NewConfigHandler(cfg *config.Config, cleaner *cleanup.Cleaner) *ConfigHandler {
+	return &ConfigHandler{cfg: cfg, cleaner: cleaner}
 }
 
 func (h *ConfigHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -131,6 +140,18 @@ func (h *ConfigHandler) handlePatch(w http.ResponseWriter, r *http.Request) {
 		}
 		if s.UseSSL != nil {
 			h.cfg.Server.UseSSL = *s.UseSSL
+		}
+		if s.DefaultTimeRange != "" {
+			h.cfg.Server.DefaultTimeRange = s.DefaultTimeRange
+		}
+		if s.DefaultLanguage != "" {
+			h.cfg.Server.DefaultLanguage = s.DefaultLanguage
+		}
+		if s.DefaultFontSize != "" {
+			h.cfg.Server.DefaultFontSize = s.DefaultFontSize
+		}
+		if s.DefaultTimeFormat != "" {
+			h.cfg.Server.DefaultTimeFormat = s.DefaultTimeFormat
 		}
 	}
 
@@ -203,6 +224,19 @@ func (h *ConfigHandler) handlePatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Propagate cleanup changes to the running goroutine without restart.
+	if req.Cleanup != nil && h.cleaner != nil {
+		h.cleaner.UpdateConfig(cleanup.Config{
+			Enabled:          h.cfg.Cleanup.Enabled,
+			DiskPath:         h.cfg.Cleanup.DiskPath,
+			ThresholdPercent: h.cfg.Cleanup.ThresholdPercent,
+			BatchSize:        h.cfg.Cleanup.BatchSize,
+			Interval:         h.cfg.Cleanup.Interval,
+		})
+		log.Printf("Cleanup: config updated live (enabled=%v, threshold=%.1f%%)",
+			h.cfg.Cleanup.Enabled, h.cfg.Cleanup.ThresholdPercent)
+	}
+
 	log.Println("Admin: configuration updated")
 	respondJSON(w, http.StatusOK, toConfigView(h.cfg))
 }
@@ -217,6 +251,10 @@ func toConfigView(cfg *config.Config) ConfigView {
 			SSLKeyFile:          cfg.Server.SSLKeyFile,
 			AllowedOrigins:      cfg.Server.AllowedOrigins,
 			AutoRefreshInterval: cfg.Server.AutoRefreshInterval,
+			DefaultTimeRange:    cfg.Server.DefaultTimeRange,
+			DefaultLanguage:     cfg.Server.DefaultLanguage,
+			DefaultFontSize:     cfg.Server.DefaultFontSize,
+			DefaultTimeFormat:   cfg.Server.DefaultTimeFormat,
 		},
 		Database: DatabaseView{
 			Host: cfg.Database.Host,

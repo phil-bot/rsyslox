@@ -18,7 +18,6 @@ var Version = "dev"
 func main() {
 	// Subcommand: rsyslox hash-password <plaintext>
 	// Prints the bcrypt hash of the given password to stdout.
-	// Used by the Docker entrypoint to generate the admin password hash at runtime.
 	if len(os.Args) == 3 && os.Args[1] == "hash-password" {
 		hash, err := auth.HashAdminPassword(os.Args[2])
 		if err != nil {
@@ -46,7 +45,7 @@ func main() {
 	if setupMode {
 		log.Println("⚠️  No configuration found — starting in setup mode")
 		log.Printf("   Setup wizard available at http://<this-host>:%d", cfg.Server.Port)
-		srv := server.New(cfg, nil, Version, true)
+		srv := server.New(cfg, nil, Version, true, nil)
 		srv.SetupRoutes()
 		if err := srv.Start(); err != nil {
 			log.Fatalf("❌ Server error: %v", err)
@@ -72,8 +71,8 @@ func main() {
 	cleaner.Start()
 	defer cleaner.Stop()
 
-	// Start server.
-	srv := server.New(cfg, db, Version, false)
+	// Start server — pass cleaner so admin config changes propagate at runtime.
+	srv := server.New(cfg, db, Version, false, cleaner)
 	srv.SetupRoutes()
 
 	log.Println("========================================")

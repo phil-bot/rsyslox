@@ -13,16 +13,53 @@ const stored = load()
 
 export const language            = ref(stored.language            ?? 'en')
 export const timeFormat          = ref(stored.timeFormat          ?? '24h')
-export const fontSize            = ref(stored.fontSize            ?? 'medium')  // 'small'|'medium'|'large'
-export const autoRefreshInterval = ref(stored.autoRefreshInterval ?? 30)        // seconds
-export const defaultTimeRange    = ref(stored.defaultTimeRange    ?? '1h')          // '15m'|'1h'|'6h'|'24h'|'7d'|'30d'
+export const fontSize            = ref(stored.fontSize            ?? 'medium')
+export const autoRefreshInterval = ref(stored.autoRefreshInterval ?? 30)
+export const defaultTimeRange    = ref(stored.defaultTimeRange    ?? '24h')
 
 // Apply font-size immediately on load
 applyFontSize(fontSize.value)
 
+/**
+ * Font size map — 14 / 16 / 18 px
+ */
 export function applyFontSize(size) {
-  const map = { small: '13px', medium: '14px', large: '15px' }
-  document.documentElement.style.setProperty('font-size', map[size] ?? '14px')
+  const map = { small: '14px', medium: '16px', large: '18px' }
+  document.documentElement.style.setProperty('font-size', map[size] ?? '16px')
+}
+
+/**
+ * Apply server-configured defaults for preferences that the user has not yet
+ * explicitly set in their own localStorage.
+ *
+ * Called from the router guard before any route component is mounted.
+ * Uses hasOwnProperty on the raw stored object so we can distinguish
+ * "never set" from "set to a value that happens to equal the fallback".
+ */
+export function applyServerDefaults(defaults) {
+  if (!defaults) return
+
+  let rawStored = {}
+  try {
+    rawStored = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')
+  } catch {}
+
+  const has = key => Object.prototype.hasOwnProperty.call(rawStored, key)
+
+  if (!has('defaultTimeRange') && defaults.time_range)
+    defaultTimeRange.value = defaults.time_range
+
+  if (!has('autoRefreshInterval') && defaults.auto_refresh_interval)
+    autoRefreshInterval.value = defaults.auto_refresh_interval
+
+  if (!has('language') && defaults.language)
+    language.value = defaults.language
+
+  if (!has('fontSize') && defaults.font_size)
+    fontSize.value = defaults.font_size
+
+  if (!has('timeFormat') && defaults.time_format)
+    timeFormat.value = defaults.time_format
 }
 
 // Persist + apply on every change

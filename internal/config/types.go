@@ -16,13 +16,20 @@ type Config struct {
 
 // ServerConfig holds HTTP server settings.
 type ServerConfig struct {
-	Host                string   `toml:"host"`
-	Port                int      `toml:"port"`
-	UseSSL              bool     `toml:"use_ssl"`
-	SSLCertFile         string   `toml:"ssl_cert"`
-	SSLKeyFile          string   `toml:"ssl_key"`
-	AllowedOrigins      []string `toml:"allowed_origins"`
-	AutoRefreshInterval int      `toml:"auto_refresh_interval"` // seconds
+	Host           string   `toml:"host"`
+	Port           int      `toml:"port"`
+	UseSSL         bool     `toml:"use_ssl"`
+	SSLCertFile    string   `toml:"ssl_cert"`
+	SSLKeyFile     string   `toml:"ssl_key"`
+	AllowedOrigins []string `toml:"allowed_origins"`
+
+	// Server-side defaults — applied to new browser sessions that have not
+	// yet stored their own preferences in localStorage.
+	AutoRefreshInterval int    `toml:"auto_refresh_interval"` // seconds
+	DefaultTimeRange    string `toml:"default_time_range"`    // e.g. "24h"
+	DefaultLanguage     string `toml:"default_language"`      // "en" | "de"
+	DefaultFontSize     string `toml:"default_font_size"`     // "small" | "medium" | "large"
+	DefaultTimeFormat   string `toml:"default_time_format"`   // "24h" | "12h"
 }
 
 // DatabaseConfig holds database connection settings.
@@ -68,6 +75,10 @@ func defaults() *Config {
 			SSLKeyFile:          "/etc/rsyslox/certs/key.pem",
 			AllowedOrigins:      []string{"*"},
 			AutoRefreshInterval: 30,
+			DefaultTimeRange:    "24h",
+			DefaultLanguage:     "en",
+			DefaultFontSize:     "medium",
+			DefaultTimeFormat:   "24h",
 		},
 		Database: DatabaseConfig{
 			Host: "localhost",
