@@ -12,7 +12,7 @@ REDOC_URL    := https://cdn.jsdelivr.net/npm/redoc/bundles/redoc.standalone.js
 .PHONY: all build build-static frontend redoc dev clean test lint install uninstall help
 
 ## all: Build everything — frontend + redoc + Go binary
-all: frontend redoc build
+all: frontend redoc lint build
 
 ## build: Build Go binary (development, requires frontend/dist to exist)
 build:
