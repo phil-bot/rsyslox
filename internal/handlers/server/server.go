@@ -79,7 +79,7 @@ func (s *Server) SetupRoutes() {
 	s.router.Handle("/docs/", cors(logging(docsHandler)))
 
 	// --- Health (public) ---
-	healthHandler := handlers.NewHealthHandler(s.db, s.version)
+	healthHandler := handlers.NewHealthHandler(s.db, s.version, s.cfg)
 	s.router.Handle("/health", cors(logging(healthHandler)))
 
 	// --- Setup wizard (localhost only, only in setup mode) ---
