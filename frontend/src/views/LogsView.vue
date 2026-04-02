@@ -176,8 +176,8 @@ function shiftTimeWindow(direction) {
   const durMs = durations[relativeDur.value] ?? durations['1h']
   let end, start
   if (timeMode.value === 'absolute' && endDate.value && startDate.value) {
-    end   = new Date(endDate.value).getTime()
-    start = new Date(startDate.value).getTime()
+    end   = new Date(endDate.value   + 'Z').getTime()
+    start = new Date(startDate.value + 'Z').getTime()
     const winMs = end - start
     start += direction * winMs
     end   += direction * winMs

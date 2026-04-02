@@ -342,7 +342,11 @@ const DURATION_MS = {
 const activeDur = computed(() => {
   if (props.autoRefresh) return props.relativeDur
   if (!props.startDate || !props.endDate) return props.relativeDur
-  const diff  = new Date(props.endDate) - new Date(props.startDate)
+  // Die Strings kommen von toISOString() und sind UTC ("YYYY-MM-DDTHH:mm").
+  // Chrome parst diese ohne 'Z' als Lokalzeit. Überspannt das Fenster eine
+  // DST-Grenze, ist der Offset zwischen Start und End unterschiedlich → diff
+  // ist um 1h falsch → kein Preset-Match. Das 'Z' erzwingt UTC in allen Browsern.
+  const diff  = new Date(props.endDate + 'Z') - new Date(props.startDate + 'Z')
   const match = Object.entries(DURATION_MS).find(([, ms]) => Math.abs(diff - ms) < 60000)
   return match ? match[0] : null
 })
