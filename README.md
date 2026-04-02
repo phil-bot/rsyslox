@@ -32,7 +32,7 @@ Single binary, no external dependencies, embedded web UI.
 
 ## Screenshots
 
-| ![UI Screenshot](docs/rsyslox-logs.png) | ![UI Screenshot dark(docs/rsyslox-logs-dark.png) |
+| ![UI Screenshot](docs/rsyslox-logs.png) | ![UI Screenshot dark](docs/rsyslox-logs-dark.png) |
 |-|-|
 
 
