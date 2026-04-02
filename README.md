@@ -1,4 +1,12 @@
+<div align="center">
+  <img src="https://rsyslox.grothu.net/rsyslox_light.svg" alt="rsyslox"/>
+</div>
+
 # rsyslox
+
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Go Version](https://img.shields.io/badge/go-1.21+-00ADD8.svg)](https://go.dev/)
+[![Release](https://img.shields.io/github/v/release/phil-bot/rsyslox)](https://github.com/phil-bot/rsyslox/releases)
 
 A self-hosted syslog viewer for MySQL/MariaDB syslog databases.
 Single binary, no external dependencies, embedded web UI.
@@ -21,6 +29,12 @@ Single binary, no external dependencies, embedded web UI.
 - Linux (amd64 or arm64)
 - MySQL / MariaDB syslog database (populated by rsyslog or compatible)
 - systemd (for the installer)
+
+## Screenshots
+
+| ![UI Screenshot](docs/rsyslox-logs.png) | ![UI Screenshot dark(docs/rsyslox-logs-dark.png) |
+|-|-|
+
 
 ## Installation
 
