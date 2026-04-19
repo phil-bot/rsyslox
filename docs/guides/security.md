@@ -29,19 +29,19 @@ rsyslox uses two separate authentication mechanisms:
 ### Admin Password
 
 - Minimum 12 characters — use a passphrase or password manager
-- The password is stored as a bcrypt hash (cost 12) — it cannot be recovered, only reset via the `hash-password` CLI command. See [Troubleshooting → Authentication Issues](troubleshooting.md#authentication-issues) for the exact steps.
+- Stored as a bcrypt hash (cost 12) — cannot be recovered, only reset via the `hash-password` CLI command (see [Troubleshooting → Authentication Issues](troubleshooting.md#authentication-issues))
 
 ## SSL/TLS
 
 Use HTTPS in production. Options:
 
-**Reverse proxy (recommended):** nginx or Apache handle TLS termination. See [Deployment Guide](deployment.md).
+**Reverse proxy (recommended):** nginx or Apache handle TLS termination — see [Deployment Guide](deployment.md).
 
 **Built-in SSL:** rsyslox can terminate TLS directly. Enable SSL in **Admin → Server**, then either:
 - Click **Generate Self-Signed Certificate** for a self-signed ECDSA P-256 cert (development/internal use), or
-- Upload your own certificate and key via **Upload Custom Certificate**.
+- Upload your own certificate and key via **Upload Custom Certificate**
 
-If `use_ssl = true` is set in `config.toml` and no certificate files exist, rsyslox generates a self-signed certificate automatically on startup.
+If `use_ssl = true` is set and no certificate files exist, rsyslox generates a self-signed certificate automatically on startup.
 
 ## CORS
 
@@ -65,7 +65,7 @@ GRANT SELECT ON Syslog.SystemEvents TO 'rsyslox'@'localhost';
 FLUSH PRIVILEGES;
 ```
 
-Set this user in the setup wizard. If you later need the cleanup service (which requires `DELETE`), grant that additionally:
+If the cleanup service is enabled, it additionally requires `DELETE`:
 
 ```sql
 GRANT DELETE ON Syslog.SystemEvents TO 'rsyslox'@'localhost';
@@ -74,29 +74,15 @@ FLUSH PRIVILEGES;
 
 ## Firewall
 
-If running behind a reverse proxy, block direct access to port 8000:
+If running behind a reverse proxy, block direct access to port 8000 — see [Deployment Guide → Firewall](deployment.md#firewall).
 
-```bash
-sudo ufw deny 8000/tcp
-sudo ufw allow 443/tcp
-sudo ufw allow 80/tcp
-```
+## Rate Limiting
 
-## Rate Limiting (nginx)
-
-```nginx
-limit_req_zone $binary_remote_addr zone=api_limit:10m rate=10r/s;
-
-location / {
-    limit_req zone=api_limit burst=20 nodelay;
-    limit_req_status 429;
-    proxy_pass http://rsyslox;
-}
-```
+Configure rate limiting in your reverse proxy. The nginx example in the [Deployment Guide](deployment.md#nginx-recommended) includes a ready-to-use `limit_req` setup.
 
 ## systemd Sandboxing
 
-The installer applies these restrictions automatically via the service file:
+The installer applies these restrictions automatically:
 
 ```ini
 NoNewPrivileges=true
@@ -107,12 +93,14 @@ ProtectHome=true
 
 ## Configuration File
 
-`/etc/rsyslox/config.toml` contains sensitive values and is protected:
+`/etc/rsyslox/config.toml` is protected:
 
-- File mode `0640` — owner `root`, group `rsyslox`
-- Database password is AES-GCM encrypted (key derived from `/etc/machine-id`)
-- Admin password is a bcrypt hash
-- API key plaintext is never stored — only SHA-256 hashes
+| Value | Storage |
+|---|---|
+| Database password | AES-GCM encrypted; key derived from `/etc/machine-id` — not portable between machines |
+| Admin password | bcrypt hash (cost 12) |
+| API key plaintext | Never stored; only SHA-256 hex hash written to disk |
+| Config file | Mode `0640` — owner `root`, group `rsyslox` |
 
 ## Incident Response
 
@@ -132,11 +120,10 @@ ProtectHome=true
 sudo nano /etc/rsyslox/config.toml
 # Replace admin_password_hash value
 
-# 3. Restart
+# 3. Restart (invalidates all existing session tokens)
 sudo systemctl restart rsyslox
 
-# 4. Immediately revoke all API keys and reissue them
-# (existing session tokens expire on restart)
+# 4. Revoke all API keys and reissue them
 ```
 
 ## Security Audit Checklist

@@ -74,7 +74,7 @@ curl http://localhost:8000/health
 
 Expected health response:
 ```json
-{"status": "healthy", "database": "connected", "version": "v0.4.0", "timestamp": "..."}
+{"status": "healthy", "database": "connected", "version": "v0.5.2", "timestamp": "..."}
 ```
 
 Open `http://<your-host>:8000` in your browser — the log viewer should load.

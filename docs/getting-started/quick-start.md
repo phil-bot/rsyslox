@@ -60,13 +60,13 @@ curl -H "X-API-Key: $API_KEY" \
 
 ## Step 4: Explore the API Docs
 
-Interactive API documentation is available at:
+Interactive API documentation is available directly in the app:
 
 ```
 http://<your-host>:8000/docs
 ```
 
-It covers all endpoints, parameters, and response formats.
+It covers all endpoints, parameters, and response formats — no separate reference page needed.
 
 ## Admin Panel
 
@@ -79,7 +79,6 @@ Navigate to `http://<your-host>:8000/admin`. Log in with your admin password to 
 
 ## Next Steps
 
-- [Full API Reference](../api/reference.md)
-- [API Examples](../api/examples.md)
 - [Deploy to Production](../guides/deployment.md)
 - [Troubleshooting](../guides/troubleshooting.md)
+- [Security Guide](../guides/security.md)

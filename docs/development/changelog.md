@@ -2,7 +2,37 @@
 
 All notable changes to rsyslox.
 
-## [Unreleased]
+## [v0.5.2] - 2026-04-03
+
+### Fixed
+
+- **Active preset lost when time window crosses a DST boundary in Chrome** —
+  Chrome parses `"YYYY-MM-DDTHH:mm"` strings (produced by `toISOString()`)
+  as local time when no trailing `Z` is present; Firefox treats the same
+  format as UTC. Two places were affected:
+  - `LogsView` — `shiftTimeWindow()` computed the window size as
+    `end - start` using local-time parsing. When the window straddled a
+    DST transition (e.g. CET→CEST on 2026-03-29 or CEST→CET on
+    2025-10-26) the UTC offset differed between the two strings, making
+    the window 1 h short. Every subsequent shift moved by the wrong
+    duration, permanently corrupting the stored dates.
+  - `FilterPanel` — `activeDur` computed the diff the same way. For the
+    single window position that spanned a DST boundary the diff was 1 h
+    off, the 60 s tolerance check failed, and the active-preset highlight
+    disappeared for exactly that one step.
+  - Fix: append `'Z'` before parsing in both places, enforcing UTC
+    interpretation consistently across all browsers.
+
+---
+
+## [v0.5.1] - 2026-03-31
+
+### Fixed
+
+- **`/health` response missing server-side defaults** — `NewHealthHandler` was
+  called without the config parameter, so the `defaults` object introduced in
+  v0.5.0 was never populated in the health response. Fixed by passing `cfg` to
+  `NewHealthHandler` in `server.go`.
 
 ---
 
@@ -91,7 +121,7 @@ configuration changes now take effect without a server restart.
 This release overhauls the Admin panel with fully editable server and database
 configuration, browser-triggered server restart, SSL certificate management, and
 a live disk usage widget. The filter panel receives visual fixes and message
-search highlighting.
+search highlighting. Several backend performance improvements are included.
 
 ### Added
 
@@ -135,8 +165,24 @@ search highlighting.
 **Filter Panel**
 - Message search results highlighted inline in the Message column with `<mark>` tags
 
+**API / Backend**
+- **`db_total` field in `/api/logs` response** — total entry count in `SystemEvents`
+  (no filter applied), returned alongside the existing filtered `total` on every request
+- **`db_total` and `oldest_entry` in `GET /api/meta` response** — database-level stats
+  (total row count, timestamp of oldest entry) without a separate API call
+- **`internal/database/cache.go`** — TTL cache (60 s) for `QueryDistinctValues` results;
+  reduces redundant `SELECT DISTINCT` queries on poll-heavy setups
+- **Toolbar DB total display** — log viewer toolbar shows
+  `{filtered} entries · {db_total} total in DB` when a filter is active and the counts differ
+- **Date range limit removed** — the 90-day hard cap on `start_date`/`end_date`
+  has been dropped; arbitrarily large time windows are now accepted
+
 ### Changed
 
+- **`/api/logs` runs three DB queries in parallel** (`CountLogs`, `QueryLogs`,
+  `TotalCount`) via goroutines + `sync.WaitGroup`, reducing per-request latency
+- **`QueryDistinctValues` results are cached** for 60 s per unique
+  column + filter combination; subsequent identical meta requests are served from memory
 - Facility pills use a dedicated `.fac-badge-btn` class; no longer inherit the white
   foreground colour from severity badges
 - Tag filter section converted from a searchable list to a pill layout (consistent
@@ -151,6 +197,11 @@ search highlighting.
 
 ### Fixed
 
+- **Args slice mutation** — `QueryLogs` previously appended `LIMIT`/`OFFSET` directly
+  to the caller's `args` slice; replaced with an internal copy to prevent data races
+  when running queries concurrently in `QueryLogsWithTotal`
+- **German strings in LogTable toolbar** — `ctrl-btn` title attributes were in German;
+  replaced with English strings (consistent with UI language policy)
 - SSL generation returned `JSON.parse: unexpected character` when the cert directory
   did not exist — caused by `defer file.Close()` keeping the handle open while the
   HTTP response was written; replaced with explicit `Close()` before each return
@@ -161,6 +212,35 @@ search highlighting.
 - Admin panel Vite build failure: `Element is missing end tag` at line 36 — unclosed
   `<template v-else>` in the Server section
 - Stray `-->` comment fragment rendered as visible text throughout the admin panel
+
+---
+
+## [v0.4.2] - 2026-02-24
+
+### Fixed
+
+- **Frontend build failure after v0.4.0** — `frontend/package.json` and
+  `package-lock.json` were missing entries added during the v0.4.0 feature
+  work, causing `npm install` to fail on a clean checkout. Lockfile
+  regenerated and committed.
+
+---
+
+## [v0.4.1] - 2026-02-24
+
+### Fixed
+
+- **Setup wizard unreachable on non-default port** — `config.Load()` ignored
+  `RSYSLOX_PORT` in setup mode and always bound to the hardcoded default
+  port 8000, making the wizard inaccessible when the installer had prompted
+  for a different port. Fixed by reading `RSYSLOX_PORT` from the environment
+  when no `config.toml` exists. The systemd unit now sets
+  `Environment=RSYSLOX_PORT=<chosen-port>` so the value survives service
+  restarts before setup is complete.
+- **Installer showed wrong setup URL** — the post-install summary and
+  browser-open logic used `DEFAULT_PORT` instead of the user-chosen
+  `SETUP_PORT`, displaying `http://localhost:8000` even when a different port
+  was selected. Fixed in `scripts/install.sh`.
 
 ---
 

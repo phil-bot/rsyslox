@@ -14,17 +14,11 @@ Production deployment guide for rsyslox.
 
 ## Install
 
-```bash
-wget https://github.com/phil-bot/rsyslox/releases/latest/download/rsyslox-linux-amd64
-chmod +x rsyslox-linux-amd64
-sudo ./install.sh
-```
-
-The installer creates a dedicated `rsyslox` system user, places the binary at `/opt/rsyslox/rsyslox`, and starts a hardened systemd service. Complete the setup wizard at `http://localhost:8000`.
+Follow the [Installation Guide](../getting-started/installation.md) to install the binary and complete the setup wizard.
 
 ## systemd Service
 
-The installer handles this automatically. For reference, the service is installed at `/etc/systemd/system/rsyslox.service`:
+The installer handles this automatically. For reference, the service file at `/etc/systemd/system/rsyslox.service`:
 
 ```ini
 [Unit]
@@ -48,7 +42,6 @@ ProtectHome=true
 WantedBy=multi-user.target
 ```
 
-**Service management:**
 ```bash
 sudo systemctl status rsyslox
 sudo systemctl restart rsyslox
@@ -135,7 +128,7 @@ sudo certbot renew --dry-run   # test auto-renewal
 
 ### Built-in SSL (Alternative)
 
-If you prefer not to use a reverse proxy, rsyslox can terminate TLS directly — see [Configuration → SSL](../getting-started/configuration.md#ssl) for setup instructions.
+If you prefer not to use a reverse proxy, rsyslox can terminate TLS directly — see [Configuration → SSL](../getting-started/configuration.md#ssl--tls) for setup instructions.
 
 ## Firewall
 
@@ -144,7 +137,7 @@ If you prefer not to use a reverse proxy, rsyslox can terminate TLS directly —
 sudo ufw allow ssh
 sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
-sudo ufw deny 8000/tcp    # Block direct access if using reverse proxy
+sudo ufw deny 8000/tcp    # block direct access when using reverse proxy
 sudo ufw enable
 
 # firewalld (CentOS/RHEL)
@@ -155,13 +148,12 @@ sudo firewall-cmd --reload
 
 ## Database Security
 
-Create a dedicated database user with minimal permissions. See [Security Guide](security.md#database) for the required SQL and a note on cleanup service permissions.
+Create a dedicated database user with minimal permissions. See [Security Guide → Database](security.md#database) for the required SQL.
 
 ## Monitoring
 
-### Health Check
-
 ```bash
+# Health check
 curl http://localhost:8000/health
 ```
 

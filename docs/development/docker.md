@@ -70,17 +70,17 @@ curl "http://localhost:8000/api/logs?Severity=99"
 
 ## Enable API Key Authentication
 
-Edit `docker-compose.yml`:
+The `API_KEY` environment variable was removed in v0.4.0. API keys are now
+created through the Admin panel:
 
-```yaml
-environment:
-  - API_KEY=test123456789
-```
+1. Open `http://localhost:8000/admin` and log in with the admin password
+   (default: set during Docker container startup via `ADMIN_PASSWORD` env var)
+2. Navigate to **API Keys → Create**
+3. Enter a name (e.g. `testing`) and copy the key shown once after creation
 
 ```bash
-docker-compose down && docker-compose up -d
-
-curl -H "X-API-Key: test123456789" "http://localhost:8000/api/logs"
+API_KEY="your-key-here"
+curl -H "X-API-Key: $API_KEY" "http://localhost:8000/api/logs"
 ```
 
 ## Configuration
@@ -183,6 +183,6 @@ wrk -t4 -c50 -d30s "http://localhost:8000/api/logs?limit=10"
 
 ## Next Steps
 
-- [API Examples](../api/examples.md) — More API usage examples
+- [API Examples](../guides/troubleshooting.md) — More API usage examples
 - [Contributing](contributing.md) — Contribute to the project
 - [Deployment Guide](../guides/deployment.md) — Production setup

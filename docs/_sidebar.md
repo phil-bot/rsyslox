@@ -2,9 +2,8 @@
 * [Installation](getting-started/installation.md)
 * [Configuration](getting-started/configuration.md)
 * [Quick Start](getting-started/quick-start.md)
-* **API Documentation**
-* [API Reference](api/reference.md)
-* [Examples](api/examples.md)
+* **API**
+* [Interactive API Docs](/docs ':ignore')
 * **Guides**
 * [Deployment](guides/deployment.md)
 * [Security](guides/security.md)
@@ -13,7 +12,7 @@
 * [Troubleshooting](guides/troubleshooting.md)
 * **Development**
 * [Docker Testing Environment](development/docker.md)
-* [Contributing](development/contributing.md)
+* [Development & Contributing](development/contributing.md)
 * [Changelog](development/changelog.md)
 * **Links**
 * [!GitHub](https://github.com/phil-bot/rsyslox)

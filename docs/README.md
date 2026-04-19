@@ -47,6 +47,13 @@ The setup wizard walks you through database credentials, admin password, and ser
 - Two authentication methods: admin session token or read-only API key
 - Interactive API documentation at `/docs`
 
+## 📸 Screenshots
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="rsyslox-logs-dark.png">
+  <img src="rsyslox-logs.png" alt="rsyslox log viewer" width="100%">
+</picture>
+
 ## 📖 Documentation
 
 **[https://rsyslox.grothu.net](https://rsyslox.grothu.net)**
