@@ -179,9 +179,3 @@ Interval: 300 s
 **"Failed to delete records" error**
 
 The database user lacks `DELETE` permission — see [Database Permissions](#database-permissions) above.
-
-## More Resources
-
-- [Configuration Reference](../getting-started/configuration.md)
-- [Performance Guide](performance.md)
-- [Troubleshooting](troubleshooting.md)

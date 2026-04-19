@@ -180,9 +180,3 @@ sudo apt-get install wrk
 # Benchmark
 wrk -t4 -c50 -d30s "http://localhost:8000/api/logs?limit=10"
 ```
-
-## Next Steps
-
-- [API Examples](../guides/troubleshooting.md) — More API usage examples
-- [Contributing](contributing.md) — Contribute to the project
-- [Deployment Guide](../guides/deployment.md) — Production setup

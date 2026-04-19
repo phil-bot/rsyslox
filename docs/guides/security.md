@@ -141,8 +141,3 @@ sudo systemctl restart rsyslox
 **Yearly**
 - [ ] Rotate admin password
 - [ ] Full security review
-
-## More Resources
-
-- [Deployment Guide](deployment.md) — nginx/Apache config, TLS setup
-- [Troubleshooting](troubleshooting.md) — Auth error diagnosis

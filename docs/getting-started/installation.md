@@ -98,9 +98,3 @@ cd rsyslox
 make all           # builds frontend + downloads Redoc + builds binary
 sudo ./install.sh
 ```
-
-## Next Steps
-
-- [Admin Panel & Configuration](configuration.md)
-- [Quick Start Guide](quick-start.md)
-- [Deployment Guide](../guides/deployment.md)

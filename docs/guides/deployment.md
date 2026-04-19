@@ -196,9 +196,3 @@ curl http://localhost:8000/health
 ```
 
 Configuration is preserved across updates.
-
-## More Resources
-
-- [Security Guide](security.md)
-- [Cleanup / Housekeeping](cleanup.md)
-- [Troubleshooting](troubleshooting.md)

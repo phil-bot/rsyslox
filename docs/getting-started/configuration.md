@@ -143,12 +143,3 @@ interval          = "15m"
 | Admin password | bcrypt hash (cost 12) |
 | API key plaintext | Never stored; only SHA-256 hex hash written to disk |
 | Config file | Mode `0640` — readable by `root` and group `rsyslox` only |
-
----
-
-## Next Steps
-
-- [Quick Start Guide](quick-start.md)
-- [Deployment Guide](../guides/deployment.md)
-- [Security Guide](../guides/security.md)
-- [Cleanup Guide](../guides/cleanup.md)
