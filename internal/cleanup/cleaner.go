@@ -184,8 +184,22 @@ func (c *Cleaner) deleteOldestRecords(n int) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return result.RowsAffected()
+
+	// Wichtig: Erst die Zeilenanzahl sichern
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+
+	// Erst danach die Optimierung separat ausführen
+	_, err = c.db.Exec("OPTIMIZE TABLE SystemEvents")
+	if err != nil {
+		return rowsAffected, err // Fehler beim Optimieren, aber Löschen war erfolgreich
+	}
+
+	return rowsAffected, nil
 }
+
 
 // diskUsagePercent returns the used disk space as a percentage for the given path.
 //
