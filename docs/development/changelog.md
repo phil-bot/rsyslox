@@ -2,6 +2,62 @@
 
 All notable changes to rsyslox.
 
+## [v0.5.3] - 2026-06-05
+
+This release replaces the `DELETE`-based log cleanup with MySQL table
+partitioning. Disk space is now reclaimed immediately when a partition is
+dropped — no `OPTIMIZE TABLE` required. The Admin panel gains a dedicated
+Cleanup tab with a live partition status widget.
+
+### Added
+
+**Partition-based log cleanup**
+- `SystemEvents` is automatically migrated to weekly `RANGE COLUMNS`
+  partitioning on first startup with cleanup enabled
+- Partitions are named by ISO calendar week (`p2026_w23`)
+- Up to 3 oldest partitions are dropped per cleanup run when disk usage
+  exceeds the threshold; disk space is reclaimed immediately by the OS
+- Weekly maintenance job pre-creates 6 weeks of future partitions
+- `p_future` catch-all partition is always kept and never dropped
+- Cleanup fails hard if the DB user lacks `ALTER` privilege — no silent
+  `DELETE` fallback; a clear error with the required SQL grant is logged
+
+**Admin panel — Cleanup tab**
+- Dedicated **Cleanup** tab (previously a sub-section of the Database tab)
+- Partition status badge: `Partition mode active` (green), `Migration in
+  progress` (amber), `Partitioning failed` (red)
+- Partition table showing name, row count, and size in MB for every partition
+- Error block with SQL grant hint when `ALTER` privilege is missing
+- `Batch size` field removed (not applicable in partition mode)
+
+**New API endpoint**
+- `GET /api/admin/cleanup/status` — returns partition mode, health flag,
+  error string, and full partition list with row counts and sizes
+
+### Changed
+
+- `internal/cleanup/cleaner.go` — rewritten around partition mode; exposes
+  `Status()` and `UpdateConfig()` methods; `Mode` type tracks
+  `unknown / migrating / partition / failed`
+- `internal/cleanup/partitions.go` — new module for all partition management:
+  `IsPartitioned`, `MigrateToPartitions`, `EnsureFuturePartitions`,
+  `DropOldestPartitions`, `HasAlterPrivilege`, `listPartitions`
+- `server.New()` — `*cleanup.Cleaner` added as parameter so the status
+  handler can query it directly
+- `BatchSize` removed from `CleanupView` and `CleanupUpdateRequest` in the
+  admin config API
+- Makefile: `lint` removed from the `all` target (still available as
+  `make lint`); `-buildvcs=false` added to `build` and `build-static`
+- Docker `entrypoint.sh`: MariaDB startup timeout increased from 30 s to
+  60 s with an initial 3 s pre-wait
+
+### Fixed
+
+- Disk space not reclaimed after cleanup — `DELETE` leaves InnoDB pages
+  allocated internally; `DROP PARTITION` frees the `.ibd` file immediately
+
+---
+
 ## [v0.5.2] - 2026-04-03
 
 ### Fixed
@@ -183,17 +239,8 @@ search highlighting. Several backend performance improvements are included.
   `TotalCount`) via goroutines + `sync.WaitGroup`, reducing per-request latency
 - **`QueryDistinctValues` results are cached** for 60 s per unique
   column + filter combination; subsequent identical meta requests are served from memory
-- Facility pills use a dedicated `.fac-badge-btn` class; no longer inherit the white
-  foreground colour from severity badges
-- Tag filter section converted from a searchable list to a pill layout (consistent
-  with facility); moved above the host section
-- Panel header height aligned with the main toolbar (`min-height: 40px`)
-- AppHeader: filter toggle button (funnel icon) placed to the right of the logo;
-  Settings link moved from standalone header icon into the account dropdown
-- Statistics nav item added as a placeholder (grayed out, "Coming soon" tooltip)
-- `api/client.js` — `request()` reads the response body as text first, then attempts
-  `JSON.parse`; connection-reset / non-JSON errors now produce readable messages
-- `internal/server/server.go` — SSL, restart, and disk routes registered centrally
+- **Date range limit removed** — the 90-day hard cap on `start_date`/`end_date`
+  has been dropped; arbitrarily large time windows are now accepted
 
 ### Fixed
 
