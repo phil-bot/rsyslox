@@ -2,9 +2,6 @@
 # Docker test environment entrypoint.
 # Sets up MariaDB, seeds test data, then starts rsyslox WITHOUT a config file
 # so the setup wizard runs and can be tested end-to-end.
-#
-# RSYSLOX_ALLOW_REMOTE_SETUP=true (set in docker-compose.yml) allows the
-# wizard to be reached from the Docker host, not just from localhost.
 
 set -e
 
@@ -29,9 +26,13 @@ echo "✓ Binary installed ($(ls -lh /opt/rsyslox/rsyslox | awk '{print $5}'))"
 # ── MariaDB ───────────────────────────────────────────────────────────────────
 echo "[2/5] Starting MariaDB..."
 mysqld_safe --datadir=/var/lib/mysql --user=mysql &
-for i in {1..30}; do
+
+# Give mysqld_safe a moment to fork before we start pinging
+sleep 3
+
+for i in {1..60}; do
     mysqladmin ping --silent 2>/dev/null && { echo "✓ MariaDB ready"; break; }
-    [ $i -eq 30 ] && echo "✗ MariaDB timeout!" && exit 1
+    [ $i -eq 60 ] && echo "✗ MariaDB timeout!" && exit 1
     sleep 1
 done
 

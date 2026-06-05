@@ -39,11 +39,11 @@ type DatabaseView struct {
 	User string `json:"user"`
 }
 
+// CleanupView — BatchSize removed (partition mode only).
 type CleanupView struct {
 	Enabled          bool    `json:"enabled"`
 	DiskPath         string  `json:"disk_path"`
 	ThresholdPercent float64 `json:"threshold_percent"`
-	BatchSize        int     `json:"batch_size"`
 	IntervalSeconds  int     `json:"interval_seconds"`
 }
 
@@ -73,11 +73,11 @@ type DatabaseUpdateRequest struct {
 	Password string `json:"password,omitempty"`
 }
 
+// CleanupUpdateRequest — BatchSize removed.
 type CleanupUpdateRequest struct {
 	Enabled          *bool    `json:"enabled,omitempty"`
 	DiskPath         string   `json:"disk_path,omitempty"`
 	ThresholdPercent *float64 `json:"threshold_percent,omitempty"`
-	BatchSize        *int     `json:"batch_size,omitempty"`
 	IntervalSeconds  *int     `json:"interval_seconds,omitempty"`
 }
 
@@ -199,14 +199,6 @@ func (h *ConfigHandler) handlePatch(w http.ResponseWriter, r *http.Request) {
 			}
 			h.cfg.Cleanup.ThresholdPercent = *c.ThresholdPercent
 		}
-		if c.BatchSize != nil {
-			if *c.BatchSize <= 0 {
-				respondError(w, http.StatusBadRequest,
-					models.NewValidationError("batch_size", "Must be greater than 0"))
-				return
-			}
-			h.cfg.Cleanup.BatchSize = *c.BatchSize
-		}
 		if c.IntervalSeconds != nil {
 			if *c.IntervalSeconds < 60 {
 				respondError(w, http.StatusBadRequest,
@@ -230,7 +222,6 @@ func (h *ConfigHandler) handlePatch(w http.ResponseWriter, r *http.Request) {
 			Enabled:          h.cfg.Cleanup.Enabled,
 			DiskPath:         h.cfg.Cleanup.DiskPath,
 			ThresholdPercent: h.cfg.Cleanup.ThresholdPercent,
-			BatchSize:        h.cfg.Cleanup.BatchSize,
 			Interval:         h.cfg.Cleanup.Interval,
 		})
 		log.Printf("Cleanup: config updated live (enabled=%v, threshold=%.1f%%)",
@@ -266,7 +257,6 @@ func toConfigView(cfg *config.Config) ConfigView {
 			Enabled:          cfg.Cleanup.Enabled,
 			DiskPath:         cfg.Cleanup.DiskPath,
 			ThresholdPercent: cfg.Cleanup.ThresholdPercent,
-			BatchSize:        cfg.Cleanup.BatchSize,
 			IntervalSeconds:  int(cfg.Cleanup.Interval.Seconds()),
 		},
 	}

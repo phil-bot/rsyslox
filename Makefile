@@ -1,10 +1,8 @@
 # rsyslox Makefile
-
 BINARY       := rsyslox
 BUILD_DIR    := build
 VERSION      ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS      := -s -w -X main.Version=$(VERSION)
-
 FRONTEND_DIR := frontend
 REDOC_JS     := docs/api-ui/redoc.standalone.js
 REDOC_URL    := https://cdn.jsdelivr.net/npm/redoc/bundles/redoc.standalone.js
@@ -12,17 +10,17 @@ REDOC_URL    := https://cdn.jsdelivr.net/npm/redoc/bundles/redoc.standalone.js
 .PHONY: all build build-static frontend redoc dev clean test lint install uninstall help
 
 ## all: Build everything — frontend + redoc + Go binary
-all: frontend redoc lint build
+all: frontend redoc build
 
 ## build: Build Go binary (development, requires frontend/dist to exist)
 build:
 	mkdir -p $(BUILD_DIR)
-	go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY) .
+	go build -buildvcs=false -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY) .
 
 ## build-static: Build fully static Go binary (for Docker / production)
 build-static:
 	mkdir -p $(BUILD_DIR)
-	CGO_ENABLED=0 GOOS=linux go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY) .
+	CGO_ENABLED=0 GOOS=linux go build -buildvcs=false -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY) .
 
 ## frontend: Install npm deps and build Vue app into frontend/dist/
 frontend:

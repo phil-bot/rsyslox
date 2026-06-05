@@ -1,6 +1,5 @@
 const BASE = ''
 
-// Serialize params supporting arrays: { Severity: [3,4] } → "Severity=3&Severity=4"
 function toQueryString(params) {
   const parts = []
   for (const [key, val] of Object.entries(params)) {
@@ -15,14 +14,12 @@ function toQueryString(params) {
 }
 
 async function request(path, options = {}) {
-  // Read token from the key the auth store actually uses
   const token   = sessionStorage.getItem('rsyslox_token')
   const headers = { 'Content-Type': 'application/json' }
   if (token) headers['X-Session-Token'] = token
 
   const res = await fetch(BASE + path, { ...options, headers })
 
-  // 401 on protected endpoints → clear session and navigate to login.
   if (res.status === 401 && !path.startsWith('/api/admin/login')) {
     sessionStorage.removeItem('rsyslox_token')
     sessionStorage.removeItem('rsyslox_role')
@@ -31,7 +28,6 @@ async function request(path, options = {}) {
     throw new Error('Session expired')
   }
 
-  // Try to parse body as JSON regardless of status
   const text = await res.text()
   let data
   try { data = text ? JSON.parse(text) : null } catch {}
@@ -75,6 +71,9 @@ export const api = {
   getDiskUsage: () =>
     request('/api/admin/disk'),
 
+  getCleanupStatus: () =>
+    request('/api/admin/cleanup/status'),
+
   restart: () =>
     request('/api/admin/restart', { method: 'POST' }),
 
@@ -82,7 +81,6 @@ export const api = {
     const form = new FormData()
     form.append('cert', certFile)
     form.append('key',  keyFile)
-    // Do not set Content-Type — browser sets it with boundary automatically
     const token = sessionStorage.getItem('rsyslox_token')
     const headers = {}
     if (token) headers['X-Session-Token'] = token
@@ -107,5 +105,5 @@ export const api = {
     request('/api/admin/keys/' + encodeURIComponent(name), { method: 'DELETE' }),
 
   health: () =>
-    fetch(BASE + '/health').then(r => r.json()),  // public, no auth, no redirect
+    fetch(BASE + '/health').then(r => r.json()),
 }

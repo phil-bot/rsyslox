@@ -8,57 +8,87 @@ import (
 	"time"
 )
 
-// Cleaner periodically removes old database entries when disk usage exceeds a threshold.
-// Config can be updated at runtime via UpdateConfig without a process restart.
+// Mode describes the current operating mode of the Cleaner.
+type Mode string
+
+const (
+	ModeUnknown    Mode = "unknown"
+	ModeMigrating  Mode = "migrating"
+	ModePartition  Mode = "partition"
+	ModeFailed     Mode = "failed"
+)
+
+// Status holds the current runtime state of the Cleaner, returned by Status().
+type Status struct {
+	Mode       Mode        `json:"mode"`
+	Healthy    bool        `json:"healthy"`
+	Error      string      `json:"error,omitempty"`
+	Partitions []Partition `json:"partitions"`
+}
+
+// Partition represents a single MySQL partition with usage stats.
+type Partition struct {
+	Name   string  `json:"name"`
+	Rows   int64   `json:"rows"`
+	SizeMB float64 `json:"size_mb"`
+}
+
+// Cleaner periodically frees disk space by dropping the oldest weekly partition
+// when disk usage exceeds the configured threshold.
+//
+// The Cleaner requires ALTER privilege on SystemEvents. If the table is not yet
+// partitioned it migrates automatically on startup. If partitioning fails the
+// Cleaner marks itself as failed and does NOT fall back to DELETE.
 type Cleaner struct {
-	db      *sql.DB
-	cfg     Config
-	mu      sync.RWMutex
-	stopCh  chan struct{}
-	resetCh chan struct{} // signals the run loop to re-read config
+	db              *sql.DB
+	mu              sync.RWMutex
+	cfg             Config
+	stopCh          chan struct{}
+	restartCh       chan struct{}
+	mode            Mode
+	statusErr       string
+	partitioned     bool
+	alterPrivileged bool
+	lastWeeklyMaint int
 }
 
 // Config holds the cleanup configuration.
 type Config struct {
-	// Enabled enables or disables the cleanup service.
-	Enabled bool
-
-	// DiskPath is the filesystem path to monitor for disk usage (e.g. /var/lib/mysql).
-	DiskPath string
-
-	// ThresholdPercent is the maximum allowed disk usage in percent (e.g. 85).
-	// When usage exceeds this value, old records will be deleted.
+	Enabled          bool
+	DiskPath         string
 	ThresholdPercent float64
-
-	// BatchSize is the number of records to delete per cleanup run.
-	BatchSize int
-
-	// Interval is how often the cleanup check runs.
-	Interval time.Duration
+	Interval         time.Duration
 }
 
 // New creates a new Cleaner instance.
 func New(db *sql.DB, cfg Config) *Cleaner {
 	return &Cleaner{
-		db:      db,
-		cfg:     cfg,
-		stopCh:  make(chan struct{}),
-		resetCh: make(chan struct{}, 1),
+		db:        db,
+		cfg:       cfg,
+		stopCh:    make(chan struct{}),
+		restartCh: make(chan struct{}, 1),
+		mode:      ModeUnknown,
 	}
 }
 
 // Start launches the cleanup loop in a background goroutine.
 func (c *Cleaner) Start() {
 	c.mu.RLock()
-	cfg := c.cfg
+	enabled := c.cfg.Enabled
+	threshold := c.cfg.ThresholdPercent
+	interval := c.cfg.Interval
 	c.mu.RUnlock()
 
-	if !cfg.Enabled {
-		log.Println("⏭  Cleanup service disabled (can be enabled in admin without restart)")
-	} else {
-		log.Printf("✓ Cleanup service started (threshold: %.1f%%, interval: %s, batch: %d)",
-			cfg.ThresholdPercent, cfg.Interval, cfg.BatchSize)
+	if !enabled {
+		log.Println("⏭  Cleanup service disabled")
+		return
 	}
+
+	log.Printf("✓ Cleanup service starting (threshold: %.1f%%, interval: %s)",
+		threshold, interval)
+
+	c.initPartitions()
+
 	go c.run()
 }
 
@@ -67,158 +97,213 @@ func (c *Cleaner) Stop() {
 	close(c.stopCh)
 }
 
-// UpdateConfig updates the cleanup configuration at runtime.
-// Changes take effect on the next tick or immediately if the service
-// was disabled and is now enabled.
-func (c *Cleaner) UpdateConfig(cfg Config) {
+// UpdateConfig applies a new configuration live without restarting the process.
+func (c *Cleaner) UpdateConfig(newCfg Config) {
 	c.mu.Lock()
-	c.cfg = cfg
+	oldInterval := c.cfg.Interval
+	c.cfg = newCfg
 	c.mu.Unlock()
 
-	select {
-	case c.resetCh <- struct{}{}:
-	default:
+	if newCfg.Interval != oldInterval {
+		select {
+		case c.restartCh <- struct{}{}:
+		default:
+		}
 	}
+
+	log.Printf("Cleanup: config updated live (enabled=%v, threshold=%.1f%%, interval=%s)",
+		newCfg.Enabled, newCfg.ThresholdPercent, newCfg.Interval)
+}
+
+// Status returns the current runtime state including partition list.
+func (c *Cleaner) Status() Status {
+	c.mu.RLock()
+	mode := c.mode
+	statusErr := c.statusErr
+	c.mu.RUnlock()
+
+	s := Status{
+		Mode:       mode,
+		Healthy:    mode == ModePartition,
+		Error:      statusErr,
+		Partitions: []Partition{},
+	}
+
+	if mode == ModePartition {
+		parts, err := listPartitions(c.db)
+		if err != nil {
+			log.Printf("Cleanup status: failed to list partitions: %v", err)
+		} else {
+			s.Partitions = parts
+		}
+	}
+
+	return s
+}
+
+// --------------------------------------------------------------------------
+// Internal
+// --------------------------------------------------------------------------
+
+func (c *Cleaner) setMode(m Mode, errMsg string) {
+	c.mu.Lock()
+	c.mode = m
+	c.statusErr = errMsg
+	c.mu.Unlock()
+}
+
+// initPartitions checks partition status and migrates if necessary.
+func (c *Cleaner) initPartitions() {
+	ok, err := HasAlterPrivilege(c.db)
+	if err != nil || !ok {
+		msg := "DB user lacks ALTER privilege on SystemEvents. " +
+			"Run: GRANT ALTER ON Syslog.SystemEvents TO 'rsyslox'@'localhost'; FLUSH PRIVILEGES;"
+		log.Printf("❌ Cleanup: %s", msg)
+		c.setMode(ModeFailed, msg)
+		c.alterPrivileged = false
+		return
+	}
+	c.alterPrivileged = true
+
+	partitioned, err := IsPartitioned(c.db)
+	if err != nil {
+		msg := "Could not check partition status: " + err.Error()
+		log.Printf("❌ Cleanup: %s", msg)
+		c.setMode(ModeFailed, msg)
+		return
+	}
+
+	if !partitioned {
+		c.setMode(ModeMigrating, "")
+		log.Println("⚙  Cleanup: SystemEvents is not partitioned — starting automatic migration…")
+		if err := MigrateToPartitions(c.db); err != nil {
+			msg := "Migration failed: " + err.Error()
+			log.Printf("❌ Cleanup: %s", msg)
+			c.setMode(ModeFailed, msg)
+			return
+		}
+	}
+
+	if err := EnsureFuturePartitions(c.db); err != nil {
+		log.Printf("⚠  Cleanup: EnsureFuturePartitions on init: %v", err)
+	}
+
+	c.partitioned = true
+	c.setMode(ModePartition, "")
+	log.Println("✓ Cleanup: partition mode active")
 }
 
 // run is the main cleanup loop.
 func (c *Cleaner) run() {
-	var ticker *time.Ticker
-	var tickerInterval time.Duration
+	c.mu.RLock()
+	interval := c.cfg.Interval
+	c.mu.RUnlock()
 
-	defer func() {
-		if ticker != nil {
-			ticker.Stop()
-		}
-		log.Println("Cleanup service stopped")
-	}()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
 
 	for {
-		c.mu.RLock()
-		cfg := c.cfg
-		c.mu.RUnlock()
-
-		if !cfg.Enabled {
-			if ticker != nil {
-				ticker.Stop()
-				ticker = nil
-				tickerInterval = 0
-			}
-			select {
-			case <-time.After(5 * time.Second):
-			case <-c.resetCh:
-			case <-c.stopCh:
-				return
-			}
-			continue
-		}
-
-		interval := cfg.Interval
-		if interval <= 0 {
-			interval = 15 * time.Minute
-		}
-		if ticker == nil || tickerInterval != interval {
-			if ticker != nil {
-				ticker.Stop()
-			}
-			tickerInterval = interval
-			ticker = time.NewTicker(tickerInterval)
-		}
-
 		select {
 		case <-ticker.C:
-			c.check()
-		case <-c.resetCh:
+			c.mu.RLock()
+			enabled := c.cfg.Enabled
+			c.mu.RUnlock()
+			if enabled {
+				c.check()
+				c.weeklyMaintenance()
+			}
+
+		case <-c.restartCh:
 			ticker.Stop()
-			ticker = nil
-			tickerInterval = 0
+			c.mu.RLock()
+			interval = c.cfg.Interval
+			c.mu.RUnlock()
+			ticker = time.NewTicker(interval)
+			log.Printf("Cleanup: ticker restarted with new interval %s", interval)
+
 		case <-c.stopCh:
+			log.Println("Cleanup service stopped")
 			return
 		}
 	}
 }
 
-// check evaluates the current disk usage and deletes records if necessary.
+// check evaluates disk usage and drops partitions if necessary.
 func (c *Cleaner) check() {
 	c.mu.RLock()
-	cfg := c.cfg
+	mode := c.mode
+	diskPath := c.cfg.DiskPath
+	threshold := c.cfg.ThresholdPercent
 	c.mu.RUnlock()
 
-	usedPercent, err := diskUsagePercent(cfg.DiskPath)
+	if mode != ModePartition {
+		log.Printf("⚠  Cleanup: skipping check — mode is %s", mode)
+		return
+	}
+
+	usedPercent, err := diskUsagePercent(diskPath)
 	if err != nil {
-		log.Printf("⚠️  Cleanup: failed to get disk usage for %s: %v", cfg.DiskPath, err)
+		log.Printf("⚠  Cleanup: failed to get disk usage for %s: %v", diskPath, err)
 		return
 	}
 
-	log.Printf("Cleanup: disk usage at %.1f%% (threshold: %.1f%%)", usedPercent, cfg.ThresholdPercent)
+	log.Printf("Cleanup: disk usage at %.1f%% (threshold: %.1f%%)", usedPercent, threshold)
 
-	if usedPercent < cfg.ThresholdPercent {
+	if usedPercent < threshold {
 		return
 	}
 
-	log.Printf("⚠️  Cleanup: disk usage %.1f%% exceeds threshold %.1f%% — deleting %d old records",
-		usedPercent, cfg.ThresholdPercent, cfg.BatchSize)
+	log.Printf("⚠  Cleanup: disk usage %.1f%% exceeds threshold %.1f%%", usedPercent, threshold)
 
-	deleted, err := c.deleteOldestRecords(cfg.BatchSize)
+	dropped, err := DropOldestPartitions(c.db)
 	if err != nil {
-		log.Printf("❌ Cleanup: failed to delete records: %v", err)
+		log.Printf("❌ Cleanup: partition drop error: %v", err)
 		return
 	}
+	if dropped == 0 {
+		log.Println("⚠  Cleanup: no droppable partitions found — cannot free space")
+		return
+	}
+	log.Printf("✓ Cleanup: dropped %d partition(s)", dropped)
 
-	log.Printf("✓ Cleanup: deleted %d records", deleted)
+	if after, err := diskUsagePercent(diskPath); err == nil {
+		log.Printf("Cleanup: disk usage after drop: %.1f%%", after)
+	}
 }
 
-// deleteOldestRecords removes the oldest N records from SystemEvents.
-func (c *Cleaner) deleteOldestRecords(n int) (int64, error) {
-	query := `
-		DELETE FROM SystemEvents
-		WHERE ID IN (
-			SELECT id FROM (
-				SELECT ID as id FROM SystemEvents
-				ORDER BY ReceivedAt ASC, ID ASC
-				LIMIT ?
-			) AS oldest
-		)
-	`
-	result, err := c.db.Exec(query, n)
-	if err != nil {
-		return 0, err
+// weeklyMaintenance ensures future partitions are created once per calendar week.
+func (c *Cleaner) weeklyMaintenance() {
+	c.mu.RLock()
+	mode := c.mode
+	c.mu.RUnlock()
+
+	if mode != ModePartition {
+		return
 	}
 
-	// Wichtig: Erst die Zeilenanzahl sichern
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return 0, err
+	_, currentWeek := time.Now().ISOWeek()
+	if currentWeek == c.lastWeeklyMaint {
+		return
 	}
-
-	// Erst danach die Optimierung separat ausführen
-	_, err = c.db.Exec("OPTIMIZE TABLE SystemEvents")
-	if err != nil {
-		return rowsAffected, err // Fehler beim Optimieren, aber Löschen war erfolgreich
+	if err := EnsureFuturePartitions(c.db); err != nil {
+		log.Printf("⚠  Cleanup: weekly EnsureFuturePartitions: %v", err)
+		return
 	}
-
-	return rowsAffected, nil
+	c.lastWeeklyMaint = currentWeek
+	log.Println("✓ Cleanup: weekly partition maintenance done")
 }
-
 
 // diskUsagePercent returns the used disk space as a percentage for the given path.
-//
-// Uses stat.Bavail (blocks available to unprivileged users) — consistent with
-// what the disk widget endpoint reports. stat.Bfree includes blocks reserved
-// for root and would show a lower usage than what is actually visible.
 func diskUsagePercent(path string) (float64, error) {
 	var stat syscall.Statfs_t
 	if err := syscall.Statfs(path, &stat); err != nil {
 		return 0, err
 	}
-
 	total := stat.Blocks * uint64(stat.Bsize)
-	avail := stat.Bavail * uint64(stat.Bsize) // available to unprivileged users
-
+	free := stat.Bfree * uint64(stat.Bsize)
 	if total == 0 {
 		return 0, nil
 	}
-
-	used := total - avail
+	used := total - free
 	return float64(used) / float64(total) * 100.0, nil
 }
