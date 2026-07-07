@@ -2,6 +2,24 @@
 
 All notable changes to rsyslox.
 
+## [v0.5.4] - 2026-07-07
+
+### Fixed
+
+- **Unreclaimed disk space from unused FULLTEXT index** — `createIndexes()`
+  created a `FULLTEXT` index on `SystemEvents.Message` at every startup, but
+  the application has never queried it (message search uses `LIKE`, not
+  `MATCH ... AGAINST` — see `internal/filters/builder.go`). MySQL/MariaDB's
+  internal `FTS_*` auxiliary tables for this index are not reclaimed
+  automatically and can grow to many gigabytes over time, independent of
+  partition-based cleanup. `createIndexes()` no longer creates the index and
+  now detects and drops any existing `FULLTEXT` index on `Message` (matched
+  by type and column, not by name, so indexes created under any prior
+  MySQL-assigned name are found) on every startup, freeing the associated
+  `FTS_*` files immediately.
+
+---
+
 ## [v0.5.3] - 2026-06-05
 
 This release replaces the `DELETE`-based log cleanup with MySQL table

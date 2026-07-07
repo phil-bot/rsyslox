@@ -1,6 +1,6 @@
 # Cleanup / Housekeeping
 
-Automatic deletion of old log entries to prevent disk overflow. Configured in **Admin → Database → Log Cleanup**.
+Automatic deletion of old log entries to prevent disk overflow. Configured in **Admin → Cleanup**.
 
 ## Overview
 
@@ -11,12 +11,16 @@ The cleanup service monitors disk usage at a configured path. When usage exceeds
 ```
 Startup
   │
+  ├─ Does the DB user have ALTER privilege?
+  │     No  → Cleanup fails (mode: failed) — no automatic fallback
+  │     Yes → Continue
+  │
   ├─ Is SystemEvents partitioned?
   │     No  → Migrate automatically (weekly partitions)
   │     Yes → Continue
   │
-  ├─ Does the DB user have ALTER privilege?
-  │     No  → Fall back to legacy DELETE (disk space NOT reclaimed)
+  ├─ Migration successful?
+  │     No  → Cleanup fails (mode: failed)
   │     Yes → Partition mode active
   │
 Every <interval>
@@ -38,20 +42,20 @@ Every <interval>
 
 ## Database Requirements
 
-The cleanup service needs **ALTER** privilege in addition to the standard SELECT:
+The cleanup service requires **ALTER** privilege in addition to the standard SELECT:
 
 ```sql
 -- Read-only access (minimum for rsyslox without cleanup)
 GRANT SELECT ON Syslog.SystemEvents TO 'rsyslox'@'localhost';
 
--- Full cleanup support (required for partition mode)
-GRANT SELECT, DELETE, ALTER ON Syslog.SystemEvents TO 'rsyslox'@'localhost';
+-- Required for cleanup (partition migration and maintenance)
+GRANT SELECT, ALTER ON Syslog.SystemEvents TO 'rsyslox'@'localhost';
 FLUSH PRIVILEGES;
 ```
 
-> If ALTER is not granted, rsyslox falls back to the legacy `DELETE`-based cleanup.
-> Old rows are removed but **disk space is not reclaimed** until MySQL reclaims it
-> internally. A warning is logged at startup.
+> If `ALTER` is not granted, cleanup fails at startup with a clear error message
+> (mode: `failed`) and does **not** run. There is no automatic fallback to row
+> deletion. Grant the privilege and restart rsyslox to enable cleanup.
 
 ## Automatic Migration
 
@@ -67,15 +71,18 @@ On first start after enabling cleanup, rsyslox automatically migrates an unparti
 
 ## Configuration
 
-Configure via **Admin panel → Database → Log Cleanup**. Changes take effect immediately — no restart needed.
+Configure via **Admin panel → Cleanup**. Changes take effect immediately — no restart needed.
 
 | Setting | Description | Default |
 |---|---|---|
 | Enabled | Toggle the cleanup service | off |
 | Disk path | Mount point to monitor | `/var/lib/mysql` |
 | Threshold % | Trigger cleanup above this disk usage | 85 % |
-| Batch size | Rows deleted per run (legacy fallback only) | 1 000 |
 | Interval | Seconds between disk checks | 900 |
+
+The Cleanup tab in the Admin panel also shows a live partition status widget
+(mode badge, error details if applicable, and the full partition list with
+row counts and sizes).
 
 ### Disk Path
 
@@ -111,12 +118,14 @@ Cleanup: disk usage after drop: 81.4%
 ✓ Cleanup: weekly partition maintenance done
 ```
 
-**Legacy fallback (ALTER not granted):**
+**Failed mode (ALTER not granted):**
 ```
-⚠  Cleanup: DB user lacks ALTER privilege
-   Falling back to legacy DELETE cleanup — disk space will NOT be reclaimed after deletion.
-   Grant ALTER on Syslog.SystemEvents to the rsyslox DB user to enable partition mode.
+❌ Cleanup: DB user lacks ALTER privilege on SystemEvents.
+   Run: GRANT ALTER ON Syslog.SystemEvents TO 'rsyslox'@'localhost'; FLUSH PRIVILEGES;
 ```
+
+The Admin panel's Cleanup tab shows this same error together with the required
+SQL statement so it can be copied directly.
 
 ```bash
 # Watch cleanup messages in real time
@@ -211,9 +220,9 @@ Check actual disk usage — it may genuinely be below the threshold:
 df -h /var/lib/mysql
 ```
 
-Verify the service is enabled in **Admin → Database → Log Cleanup**.
+Verify the service is enabled in **Admin → Cleanup**.
 
-**"DB user lacks ALTER privilege" warning**
+**"DB user lacks ALTER privilege" error**
 
 Grant the required privilege and restart rsyslox:
 ```sql
@@ -237,6 +246,16 @@ unusual in partition mode but can happen on some filesystems. Check:
 # Verify the inode is actually released
 lsof | grep -i mysql | grep deleted
 ```
+
+**Disk usage much higher than partition data suggests**
+
+If `du -sh` on the MySQL data directory shows significantly more space used than
+the sum of partition sizes reported by `INFORMATION_SCHEMA.PARTITIONS`, check for
+orphaned index auxiliary files (e.g. `FTS_*` files from an unused `FULLTEXT`
+index). rsyslox automatically detects and removes any `FULLTEXT` index on
+`SystemEvents.Message` at startup, since message search uses `LIKE` rather than
+`MATCH ... AGAINST`. See the startup log for a line starting with
+`Found orphaned FULLTEXT index`.
 
 ## More Resources
 

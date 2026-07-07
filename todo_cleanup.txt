@@ -1,0 +1,112 @@
+# MySQL Tabellen-Partitionierung für SystemEvents
+
+Dieses Dokument beschreibt, wie die Tabelle `SystemEvents` auf eine rotierende, zeitbasierte Partitionierung umgestellt wird.
+
+## Warum Partitionierung?
+* **Sofortiger Speicherplatz:** `ALTER TABLE ... DROP PARTITION` löscht Daten in Millisekunden und gibt den Festplattenplatz **sofort** an das Betriebssystem zurück.
+* **Keine Performance-Einbußen:** Das extrem langsame und blockierende `OPTIMIZE TABLE` entfällt komplett.
+* **Weniger I/O-Last:** Keine ständigen Schreib- und Lesevorgänge durch `DELETE`-Befehle auf großen Indizes.
+
+---
+
+## 1. Voraussetzung in MySQL
+Um nach einem Datum partitionieren zu können, **muss** die Datums-Spalte (`ReceivedAt`) Teil des Primary Keys (Primärschlüssels) der Tabelle sein.
+
+### Bestehende Tabelle migrieren (Beispiel)
+Falls Ihr aktueller Primary Key nur `ID` ist, muss er erweitert werden:
+
+```sql
+-- 1. Alten Primärschlüssel entfernen und neuen (ID, ReceivedAt) erstellen
+ALTER TABLE SystemEvents DROP PRIMARY KEY, ADD PRIMARY KEY (ID, ReceivedAt);
+
+-- 2. Partitionierung nach Monaten aktivieren (Beispiel für das Jahr 2026)
+ALTER TABLE SystemEvents PARTITION BY RANGE COLUMNS(ReceivedAt) (
+    PARTITION p2026_01 VALUES LESS THAN ('2026-02-01'),
+    PARTITION p2026_02 VALUES LESS THAN ('2026-03-01'),
+    PARTITION p2026_03 VALUES LESS THAN ('2026-04-01'),
+    PARTITION p2026_04 VALUES LESS THAN ('2026-05-01'),
+    PARTITION p2026_05 VALUES LESS THAN ('2026-06-01'),
+    PARTITION p_future VALUES LESS THAN (MAXVALUE)
+);
+```
+
+*Hinweis: Die Partition `p_future` fängt alle Daten ab, die über das aktuelle Schema hinausgehen, damit keine Schreibfehler entstehen.*
+
+---
+
+## 2. Manuelle Speicherfreigabe (MySQL-Konsole)
+Wenn der Speicherplatz knapp wird, ermitteln Sie die älteste Partition und löschen diese direkt:
+
+```sql
+-- Zeigt alle aktuellen Partitionen und deren Datenmenge an
+SELECT PARTITION_NAME, TABLE_ROWS
+FROM INFORMATION_SCHEMA.PARTITIONS
+WHERE TABLE_NAME = 'SystemEvents';
+
+-- Löscht die Partition und gibt den Festplattenplatz SOFORT frei
+ALTER TABLE SystemEvents DROP PARTITION p2026_01;
+```
+
+---
+
+## 3. Anpassung im Go-Code (Cleaner)
+
+Statt einzelne Zeilen mit `LIMIT` zu löschen, ermittelt der Go-Cleaner das Alter der Partitionen und wirft die älteste ab.
+
+### SQL-Abfrage für Go
+Mit dieser Abfrage finden Sie im Go-Code heraus, welche Partitionen existieren und welche die älteste ist (ohne `p_future` zu löschen):
+
+```go
+// Holt den Namen der ältesten Partition (ausgenommen der Zukunfts-Partition)
+query := `
+    SELECT PARTITION_NAME
+    FROM INFORMATION_SCHEMA.PARTITIONS
+    WHERE TABLE_NAME = 'SystemEvents'
+      AND PARTITION_NAME NOT LIKE 'p_future'
+    ORDER BY PARTITION_DESCRIPTION ASC
+    LIMIT 1;
+`
+```
+
+### Implementierung in der Cleaner-Funktion
+Der Go-Code sieht nach der Umstellung stark vereinfacht so aus:
+
+```go
+func (c *Cleaner) dropOldestPartition() error {
+    // 1. Namen der ältesten Partition ermitteln
+    var partitionName string
+    err := c.db.QueryRow(`
+        SELECT PARTITION_NAME
+        FROM INFORMATION_SCHEMA.PARTITIONS
+        WHERE TABLE_NAME = 'SystemEvents'
+          AND PARTITION_NAME != 'p_future'
+        ORDER BY PARTITION_DESCRIPTION ASC
+        LIMIT 1
+    `).Scan(&partitionName)
+
+    if err != nil {
+        return err
+    }
+
+    // 2. Partition dynamisch löschen (Achtung: SQL-Injection-Schutz beachten,
+    // da Partitionsnamen nicht über Platzhalter ? übergeben werden können.
+    // Da der Name direkt aus der DB kommt, ist es hier sicher).
+    query := fmt.Sprintf("ALTER TABLE SystemEvents DROP PARTITION %s", partitionName)
+    _, err = c.db.Exec(query)
+
+    return err
+}
+```
+
+---
+
+## 4. Automatisierung (Wartung)
+Da die Zeit voranschreitet, müssen regelmäßig neue Partitionen für die Zukunft angelegt werden. Dies kann über einen **MySQL Event Scheduler** (vollautomatisch in der Datenbank) oder über einen wöchentlichen Cronjob in Go gelöst werden:
+
+```sql
+-- Neue Partition vor Monatsbeginn hinzufügen (Beispiel für Juni)
+ALTER TABLE SystemEvents REORGANIZE PARTITION p_future INTO (
+    PARTITION p2026_06 VALUES LESS THAN ('2026-07-01'),
+    PARTITION p_future VALUES LESS THAN (MAXVALUE)
+);
+```
