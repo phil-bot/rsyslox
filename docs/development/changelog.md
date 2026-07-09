@@ -2,6 +2,32 @@
 
 All notable changes to rsyslox.
 
+## [v0.5.5] - 2026-07-07
+
+### Fixed
+
+- **`EnsureFuturePartitions` failed permanently after older partitions were
+  dropped** — the function always computed candidate weekly partitions as
+  `now + 1..6 weeks`, independent of which partitions actually existed. Once
+  cleanup had dropped the oldest weeks (e.g. `p2026_w27`–`w29`), a later run
+  could try to insert one of those same week boundaries again via
+  `REORGANIZE PARTITION p_future`, which MySQL rejects with `Error 1493:
+  VALUES LESS THAN value must be strictly increasing for each partition`,
+  since the newer partitions immediately before `p_future` already had a
+  higher boundary. `EnsureFuturePartitions` now determines the actual highest
+  existing partition boundary first (`highestPartitionBoundary`) and only
+  ever appends weeks after it, making the strictly-increasing violation
+  impossible by construction.
+- **Retry-loop spammed the log every cleanup tick on failure** — because the
+  above bug caused `EnsureFuturePartitions` to fail deterministically on
+  every call, and `weeklyMaintenance` only updated its "last run" marker on
+  *success*, the failing operation was retried on every single cleanup
+  interval tick (e.g. every 60 s in tightly configured setups) instead of
+  roughly once a week. `weeklyMaintenance` now rate-limits attempts to once
+  per 24 hours regardless of outcome.
+
+---
+
 ## [v0.5.4] - 2026-07-07
 
 ### Fixed

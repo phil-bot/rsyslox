@@ -12,10 +12,10 @@ import (
 type Mode string
 
 const (
-	ModeUnknown    Mode = "unknown"
-	ModeMigrating  Mode = "migrating"
-	ModePartition  Mode = "partition"
-	ModeFailed     Mode = "failed"
+	ModeUnknown   Mode = "unknown"
+	ModeMigrating Mode = "migrating"
+	ModePartition Mode = "partition"
+	ModeFailed    Mode = "failed"
 )
 
 // Status holds the current runtime state of the Cleaner, returned by Status().
@@ -33,6 +33,12 @@ type Partition struct {
 	SizeMB float64 `json:"size_mb"`
 }
 
+// maintenanceInterval is the minimum time between EnsureFuturePartitions
+// attempts, regardless of whether the previous attempt succeeded or failed.
+// This prevents log/retry spam if partition maintenance fails persistently —
+// see the "weekly EnsureFuturePartitions" retry-every-tick bug fixed in v0.5.5.
+const maintenanceInterval = 24 * time.Hour
+
 // Cleaner periodically frees disk space by dropping the oldest weekly partition
 // when disk usage exceeds the configured threshold.
 //
@@ -40,16 +46,16 @@ type Partition struct {
 // partitioned it migrates automatically on startup. If partitioning fails the
 // Cleaner marks itself as failed and does NOT fall back to DELETE.
 type Cleaner struct {
-	db              *sql.DB
-	mu              sync.RWMutex
-	cfg             Config
-	stopCh          chan struct{}
-	restartCh       chan struct{}
-	mode            Mode
-	statusErr       string
-	partitioned     bool
-	alterPrivileged bool
-	lastWeeklyMaint int
+	db                      *sql.DB
+	mu                      sync.RWMutex
+	cfg                     Config
+	stopCh                  chan struct{}
+	restartCh               chan struct{}
+	mode                    Mode
+	statusErr               string
+	partitioned             bool
+	alterPrivileged         bool
+	lastMaintenanceAttempt  time.Time
 }
 
 // Config holds the cleanup configuration.
@@ -187,6 +193,7 @@ func (c *Cleaner) initPartitions() {
 	if err := EnsureFuturePartitions(c.db); err != nil {
 		log.Printf("⚠  Cleanup: EnsureFuturePartitions on init: %v", err)
 	}
+	c.lastMaintenanceAttempt = time.Now()
 
 	c.partitioned = true
 	c.setMode(ModePartition, "")
@@ -266,30 +273,41 @@ func (c *Cleaner) check() {
 	}
 	log.Printf("✓ Cleanup: dropped %d partition(s)", dropped)
 
-	if after, err := diskUsagePercent(diskPath); err == nil {
+	c.mu.RLock()
+	diskPath2 := c.cfg.DiskPath
+	c.mu.RUnlock()
+	if after, err := diskUsagePercent(diskPath2); err == nil {
 		log.Printf("Cleanup: disk usage after drop: %.1f%%", after)
 	}
 }
 
-// weeklyMaintenance ensures future partitions are created once per calendar week.
+// weeklyMaintenance ensures future partitions exist. Attempts are rate-limited
+// to once per maintenanceInterval (24h) regardless of success or failure —
+// this avoids retrying a persistently failing operation on every cleanup
+// tick, which previously caused log spam when EnsureFuturePartitions failed
+// (see v0.5.5 changelog).
 func (c *Cleaner) weeklyMaintenance() {
 	c.mu.RLock()
 	mode := c.mode
+	lastAttempt := c.lastMaintenanceAttempt
 	c.mu.RUnlock()
 
 	if mode != ModePartition {
 		return
 	}
 
-	_, currentWeek := time.Now().ISOWeek()
-	if currentWeek == c.lastWeeklyMaint {
+	if time.Since(lastAttempt) < maintenanceInterval {
 		return
 	}
+
+	c.mu.Lock()
+	c.lastMaintenanceAttempt = time.Now()
+	c.mu.Unlock()
+
 	if err := EnsureFuturePartitions(c.db); err != nil {
 		log.Printf("⚠  Cleanup: weekly EnsureFuturePartitions: %v", err)
 		return
 	}
-	c.lastWeeklyMaint = currentWeek
 	log.Println("✓ Cleanup: weekly partition maintenance done")
 }
 

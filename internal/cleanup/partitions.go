@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 )
 
@@ -66,39 +67,60 @@ func MigrateToPartitions(db *sql.DB) error {
 	return nil
 }
 
-// EnsureFuturePartitions creates weekly partitions for the next weeksAhead
-// weeks if they do not exist yet.
+// EnsureFuturePartitions creates weekly partitions so that partitions exist
+// up to at least weeksAhead weeks from now.
+//
+// It always continues forward from the highest currently existing partition
+// boundary (via highestPartitionBoundary), never from a fixed "now + i weeks"
+// offset. This is important: once older weekly partitions have been dropped
+// by the cleanup routine, blindly recomputing candidates relative to "now"
+// could try to insert a partition chronologically *before* partitions that
+// already exist further in the future — which MySQL rejects with
+// "VALUES LESS THAN value must be strictly increasing for each partition"
+// (error 1493). Starting from the actual highest boundary makes this
+// impossible by construction.
 func EnsureFuturePartitions(db *sql.DB) error {
-	now := time.Now()
-	for i := 1; i <= weeksAhead; i++ {
-		weekStart := startOfWeek(now.AddDate(0, 0, 7*i))
-		weekEnd := weekStart.AddDate(0, 0, 7)
-		name := partitionName(weekStart)
+	target := startOfWeek(time.Now().AddDate(0, 0, 7*weeksAhead)).AddDate(0, 0, 7)
+
+	current, err := highestPartitionBoundary(db)
+	if err != nil {
+		return fmt.Errorf("could not determine highest partition boundary: %w", err)
+	}
+	// No data partitions exist yet (only p_future) — anchor at the start of
+	// the current week so we don't create a partition that is already in the past.
+	if current.IsZero() {
+		current = startOfWeek(time.Now())
+	}
+
+	for current.Before(target) {
+		weekEnd := current.AddDate(0, 0, 7)
+		name := partitionName(current)
 
 		exists, err := partitionExists(db, name)
 		if err != nil {
 			return err
 		}
-		if exists {
-			continue
+		if !exists {
+			query := fmt.Sprintf(`
+				ALTER TABLE %s REORGANIZE PARTITION %s INTO (
+					PARTITION %s VALUES LESS THAN ('%s'),
+					PARTITION %s VALUES LESS THAN (MAXVALUE)
+				)`,
+				partitionTable,
+				futurePartition,
+				name, weekEnd.Format("2006-01-02"),
+				futurePartition,
+			)
+
+			if _, err := db.Exec(query); err != nil {
+				return fmt.Errorf("failed to create partition %s: %w", name, err)
+			}
+			log.Printf("✓ Partition created: %s (< %s)", name, weekEnd.Format("2006-01-02"))
 		}
 
-		query := fmt.Sprintf(`
-			ALTER TABLE %s REORGANIZE PARTITION %s INTO (
-				PARTITION %s VALUES LESS THAN ('%s'),
-				PARTITION %s VALUES LESS THAN (MAXVALUE)
-			)`,
-			partitionTable,
-			futurePartition,
-			name, weekEnd.Format("2006-01-02"),
-			futurePartition,
-		)
-
-		if _, err := db.Exec(query); err != nil {
-			return fmt.Errorf("failed to create partition %s: %w", name, err)
-		}
-		log.Printf("✓ Partition created: %s (< %s)", name, weekEnd.Format("2006-01-02"))
+		current = weekEnd
 	}
+
 	return nil
 }
 
@@ -206,6 +228,40 @@ func partitionExists(db *sql.DB, name string) (bool, error) {
 		  AND PARTITION_NAME = ?
 	`, partitionTable, name).Scan(&count)
 	return count > 0, err
+}
+
+// highestPartitionBoundary returns the upper bound (VALUES LESS THAN) of the
+// most recent non-future data partition — i.e. the date up to which weekly
+// partitions already exist. Returns the zero time if no data partition
+// exists yet (table has only p_future, or is not partitioned at all).
+//
+// PARTITION_DESCRIPTION for a RANGE COLUMNS(ReceivedAt) partition is stored
+// by MySQL/MariaDB as a quoted literal, e.g. '2026-07-27' — the quotes are
+// stripped before parsing.
+func highestPartitionBoundary(db *sql.DB) (time.Time, error) {
+	var desc sql.NullString
+	err := db.QueryRow(`
+		SELECT PARTITION_DESCRIPTION
+		FROM INFORMATION_SCHEMA.PARTITIONS
+		WHERE TABLE_NAME   = ?
+		  AND TABLE_SCHEMA = DATABASE()
+		  AND PARTITION_NAME != ?
+		ORDER BY PARTITION_DESCRIPTION DESC
+		LIMIT 1
+	`, partitionTable, futurePartition).Scan(&desc)
+	if err == sql.ErrNoRows || (err == nil && !desc.Valid) {
+		return time.Time{}, nil
+	}
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	raw := strings.Trim(desc.String, "'")
+	t, err := time.Parse("2006-01-02", raw)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("could not parse partition boundary %q: %w", desc.String, err)
+	}
+	return t, nil
 }
 
 func buildPartitionClause(oldest time.Time, ahead int) (string, error) {
